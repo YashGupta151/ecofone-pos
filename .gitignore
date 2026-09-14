@@ -1,0 +1,24 @@
+# Node dependencies
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# Production build artifacts
+dist/
+client/dist/
+build/
+
+# Environment files
+.env
+server/.env.local
+
+# Logs and system files
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Database backup / temp
+*.db-journal
+*.db-shm
+*.db-wal

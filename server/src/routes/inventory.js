@@ -1,0 +1,282 @@
+const express = require('express');
+const router = express.Router();
+const db = require('../db/database');
+const { authenticateToken, requireAdmin, logAudit } = require('../middleware/auth');
+
+// GET /api/inventory (List with filters)
+router.get('/', authenticateToken, (req, res) => {
+  const { store_id, brand, condition_grade, stock_status, search, page = 1, limit = 50 } = req.query;
+
+  let baseQuery = `
+    SELECT p.*, s.name as store_name, s.code as store_code, s.city as store_city,
+           sup.name as supplier_name
+    FROM phone_inventory p
+    LEFT JOIN stores s ON p.current_store_id = s.id
+    LEFT JOIN suppliers sup ON p.supplier_id = sup.id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  // Employee restricted to their store
+  if (req.user.role !== 'admin') {
+    baseQuery += ` AND p.current_store_id = ?`;
+    params.push(req.user.assigned_store_id);
+  } else if (store_id) {
+    baseQuery += ` AND p.current_store_id = ?`;
+    params.push(parseInt(store_id));
+  }
+
+  if (brand) {
+    baseQuery += ` AND p.brand = ?`;
+    params.push(brand);
+  }
+
+  if (condition_grade) {
+    baseQuery += ` AND p.condition_grade = ?`;
+    params.push(condition_grade);
+  }
+
+  if (stock_status) {
+    baseQuery += ` AND p.stock_status = ?`;
+    params.push(stock_status);
+  }
+
+  if (search) {
+    baseQuery += ` AND (p.imei1 LIKE ? OR p.imei2 LIKE ? OR p.serial_number LIKE ? OR p.internal_product_id LIKE ? OR p.model LIKE ? OR p.brand LIKE ?)`;
+    const sTerm = `%${search.trim()}%`;
+    params.push(sTerm, sTerm, sTerm, sTerm, sTerm, sTerm);
+  }
+
+  // Count query
+  const countQuery = `SELECT COUNT(*) as total FROM (${baseQuery})`;
+  const countResult = db.prepare(countQuery).get(...params);
+
+  // Pagination
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  baseQuery += ` ORDER BY p.id DESC LIMIT ? OFFSET ?`;
+  params.push(parseInt(limit), offset);
+
+  const phones = db.prepare(baseQuery).all(...params);
+
+  res.json({
+    success: true,
+    phones,
+    pagination: {
+      total: countResult.total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(countResult.total / parseInt(limit))
+    }
+  });
+});
+
+// GET /api/inventory/stats (Overview metrics)
+router.get('/stats', authenticateToken, (req, res) => {
+  let whereClause = '';
+  const params = [];
+
+  if (req.user.role !== 'admin') {
+    whereClause = ' WHERE current_store_id = ?';
+    params.push(req.user.assigned_store_id);
+  }
+
+  const overall = db.prepare(`
+    SELECT 
+      COUNT(*) as total_devices,
+      COALESCE(SUM(CASE WHEN stock_status = 'AVAILABLE' THEN 1 ELSE 0 END), 0) as available_devices,
+      COALESCE(SUM(CASE WHEN stock_status = 'SOLD' THEN 1 ELSE 0 END), 0) as sold_devices,
+      COALESCE(SUM(CASE WHEN stock_status = 'IN_TRANSIT' THEN 1 ELSE 0 END), 0) as in_transit_devices,
+      COALESCE(SUM(CASE WHEN stock_status = 'DEFECTIVE' THEN 1 ELSE 0 END), 0) as defective_devices,
+      COALESCE(SUM(CASE WHEN stock_status = 'AVAILABLE' THEN total_cost ELSE 0 END), 0) as available_inventory_cost,
+      COALESCE(SUM(CASE WHEN stock_status = 'AVAILABLE' THEN final_selling_price ELSE 0 END), 0) as available_inventory_value
+    FROM phone_inventory
+    ${whereClause}
+  `).get(...params);
+
+  // Store-wise breakdown (Admin only)
+  let storeWise = [];
+  if (req.user.role === 'admin') {
+    storeWise = db.prepare(`
+      SELECT s.id, s.name, s.code, s.city,
+        COUNT(p.id) as total_devices,
+        SUM(CASE WHEN p.stock_status = 'AVAILABLE' THEN 1 ELSE 0 END) as available_devices,
+        SUM(CASE WHEN p.stock_status = 'SOLD' THEN 1 ELSE 0 END) as sold_devices,
+        COALESCE(SUM(CASE WHEN p.stock_status = 'AVAILABLE' THEN p.total_cost ELSE 0 END), 0) as inventory_cost
+      FROM stores s
+      LEFT JOIN phone_inventory p ON s.id = p.current_store_id
+      GROUP BY s.id
+      ORDER BY s.id ASC
+    `).all();
+  }
+
+  res.json({ success: true, overall, storeWise });
+});
+
+// GET /api/inventory/imei/:imei (Complete Lifecycle Search)
+router.get('/imei/:imei', authenticateToken, (req, res) => {
+  const imei = req.params.imei.trim();
+
+  const phone = db.prepare(`
+    SELECT p.*, s.name as store_name, s.code as store_code, s.city as store_city, s.state as store_state,
+           sup.name as supplier_name, sup.phone as supplier_phone, sup.contact_person as supplier_contact
+    FROM phone_inventory p
+    LEFT JOIN stores s ON p.current_store_id = s.id
+    LEFT JOIN suppliers sup ON p.supplier_id = sup.id
+    WHERE p.imei1 = ? OR p.imei2 = ?
+  `).get(imei, imei);
+
+  if (!phone) {
+    return res.status(404).json({ success: false, message: 'Device with specified IMEI not found.' });
+  }
+
+  // Employee store access verification
+  if (req.user.role !== 'admin' && phone.current_store_id !== req.user.assigned_store_id && phone.stock_status === 'AVAILABLE') {
+    return res.status(403).json({ success: false, message: 'This device belongs to another store.' });
+  }
+
+  // Find Sale info if sold
+  const saleInfo = db.prepare(`
+    SELECT si.*, sa.invoice_number, sa.sale_number, sa.sale_date, sa.grand_total,
+           c.full_name as customer_name, c.phone as customer_phone, c.email as customer_email,
+           u.full_name as sold_by_employee
+    FROM sale_items si
+    JOIN sales sa ON si.sale_id = sa.id
+    LEFT JOIN customers c ON sa.customer_id = c.id
+    LEFT JOIN users u ON sa.employee_id = u.id
+    WHERE si.phone_id = ?
+    ORDER BY sa.sale_date DESC
+    LIMIT 1
+  `).get(phone.id);
+
+  // Warranty info
+  const warrantyInfo = db.prepare(`
+    SELECT * FROM warranties WHERE phone_id = ? ORDER BY id DESC LIMIT 1
+  `).get(phone.id);
+
+  // Transfers history
+  const transfers = db.prepare(`
+    SELECT t.*, 
+           fs.name as from_store_name, ts.name as to_store_name,
+           u1.full_name as initiated_by_name, u2.full_name as received_by_name
+    FROM stock_transfer_items ti
+    JOIN stock_transfers t ON ti.transfer_id = t.id
+    LEFT JOIN stores fs ON t.from_store_id = fs.id
+    LEFT JOIN stores ts ON t.to_store_id = ts.id
+    LEFT JOIN users u1 ON t.initiated_by = u1.id
+    LEFT JOIN users u2 ON t.received_by = u2.id
+    WHERE ti.phone_id = ?
+    ORDER BY t.created_at DESC
+  `).all(phone.id);
+
+  // Return history
+  const returnInfo = db.prepare(`
+    SELECT r.*, c.full_name as customer_name
+    FROM return_items ri
+    JOIN returns r ON ri.return_id = r.id
+    LEFT JOIN customers c ON r.customer_id = c.id
+    WHERE ri.phone_id = ?
+    ORDER BY r.created_at DESC
+  `).all(phone.id);
+
+  res.json({
+    success: true,
+    phone,
+    saleInfo,
+    warrantyInfo,
+    transfers,
+    returnInfo
+  });
+});
+
+// POST /api/inventory (Add phone to inventory)
+router.post('/', authenticateToken, (req, res) => {
+  const {
+    brand, model, variant, ram, storage, color,
+    imei1, imei2, serial_number, condition_grade, battery_health,
+    purchase_price, refurbishment_cost, additional_cost,
+    selling_price, discount, tax_rate,
+    supplier_id, purchase_date, warranty_period_months,
+    current_store_id, notes
+  } = req.body;
+
+  if (!brand || !model || !imei1 || !selling_price) {
+    return res.status(400).json({ success: false, message: 'Brand, model, IMEI 1, and selling price are required.' });
+  }
+
+  // Check IMEI Uniqueness (Rule 1)
+  const existing = db.prepare(`SELECT id, imei1, stock_status FROM phone_inventory WHERE imei1 = ? OR (imei2 IS NOT NULL AND imei2 = ?)`).get(imei1.trim(), imei1.trim());
+  if (existing) {
+    return res.status(400).json({ success: false, message: `IMEI ${imei1} already exists in the system (Status: ${existing.stock_status}).` });
+  }
+
+  if (imei2 && imei2.trim()) {
+    const existing2 = db.prepare(`SELECT id, imei1 FROM phone_inventory WHERE imei1 = ? OR imei2 = ?`).get(imei2.trim(), imei2.trim());
+    if (existing2) {
+      return res.status(400).json({ success: false, message: `Secondary IMEI ${imei2} already exists in the system.` });
+    }
+  }
+
+  const pCost = parseFloat(purchase_price || 0);
+  const rCost = parseFloat(refurbishment_cost || 0);
+  const aCost = parseFloat(additional_cost || 0);
+  const totalCost = pCost + rCost + aCost;
+
+  const sPrice = parseFloat(selling_price);
+  const disc = parseFloat(discount || 0);
+  const tRate = parseFloat(tax_rate || 18.0);
+  const taxable = sPrice - disc;
+  const finalPrice = taxable + (taxable * (tRate / 100));
+
+  const targetStoreId = (req.user.role === 'admin' && current_store_id) ? parseInt(current_store_id) : req.user.assigned_store_id;
+  if (!targetStoreId) {
+    return res.status(400).json({ success: false, message: 'Store must be assigned.' });
+  }
+
+  // Generate internal product ID
+  const countRow = db.prepare(`SELECT COUNT(*) as cnt FROM phone_inventory`).get();
+  const internalId = `ECO-PH-${String(countRow.cnt + 1).padStart(5, '0')}`;
+
+  try {
+    const info = db.prepare(`
+      INSERT INTO phone_inventory (
+        internal_product_id, brand, model, variant, ram, storage, color,
+        imei1, imei2, serial_number, condition_grade, battery_health,
+        purchase_price, refurbishment_cost, additional_cost, total_cost,
+        selling_price, discount, tax_rate, final_selling_price,
+        supplier_id, purchase_date, warranty_period_months,
+        current_store_id, stock_status, date_added, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', DATE('now'), ?)
+    `).run(
+      internalId, brand, model, variant || '', ram || '', storage || '', color || '',
+      imei1.trim(), imei2 ? imei2.trim() : null, serial_number || '', condition_grade || 'Grade A', battery_health || '90%',
+      pCost, rCost, aCost, totalCost,
+      sPrice, disc, tRate, finalPrice,
+      supplier_id || null, purchase_date || null, parseInt(warranty_period_months || 6),
+      targetStoreId, notes || ''
+    );
+
+    logAudit(req.user.id, req.user.username, 'ADD_INVENTORY', targetStoreId, 'PHONE', info.lastInsertRowid, { internalId, imei1, brand, model, totalCost }, req);
+
+    res.status(201).json({
+      success: true,
+      message: 'Phone added to inventory successfully.',
+      phoneId: info.lastInsertRowid,
+      internal_product_id: internalId
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/inventory/meta (Brands, models, grades, suppliers)
+router.get('/meta/catalog', authenticateToken, (req, res) => {
+  const brands = db.prepare(`SELECT * FROM brands ORDER BY name ASC`).all();
+  const models = db.prepare(`SELECT m.*, b.name as brand_name FROM phone_models m JOIN brands b ON m.brand_id = b.id ORDER BY m.name ASC`).all();
+  const grades = db.prepare(`SELECT * FROM grades ORDER BY id ASC`).all();
+  const suppliers = db.prepare(`SELECT id, name, contact_person, phone, city FROM suppliers WHERE status = 'active'`).all();
+  const stores = db.prepare(`SELECT id, name, code, city FROM stores WHERE status = 'active'`).all();
+
+  res.json({ success: true, brands, models, grades, suppliers, stores });
+});
+
+module.exports = router;
