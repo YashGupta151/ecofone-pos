@@ -64,12 +64,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(`🚀 Ecofone POS & Multi-Store Server running on port ${PORT}`);
-  console.log(`🏬 Managing 12 Physical Stores Across India`);
-  console.log(`👉 API Health: http://localhost:${PORT}/api/health`);
-  console.log(`======================================================\n`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`\n======================================================`);
+    console.log(`🚀 Ecofone POS & Multi-Store Server running on port ${PORT}`);
+    console.log(`🏬 Managing 12 Physical Stores Across India`);
+    console.log(`👉 API Health: http://localhost:${PORT}/api/health`);
+    console.log(`======================================================\n`);
+  });
+}
 
 module.exports = app;

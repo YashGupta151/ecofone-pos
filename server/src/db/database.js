@@ -2,16 +2,30 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dbDir = path.resolve(__dirname, '../../data');
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+const isVercel = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+let dbPath;
+
+if (isVercel) {
+  const tmpPath = path.join('/tmp', 'ecofone.db');
+  const bundledDb = path.resolve(__dirname, '../../data/ecofone.db');
+  if (!fs.existsSync(tmpPath)) {
+    if (fs.existsSync(bundledDb)) {
+      fs.copyFileSync(bundledDb, tmpPath);
+    }
+  }
+  dbPath = tmpPath;
+} else {
+  const dbDir = path.resolve(__dirname, '../../data');
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+  dbPath = path.join(dbDir, 'ecofone.db');
 }
 
-const dbPath = path.join(dbDir, 'ecofone.db');
 const db = new Database(dbPath);
 
-// Enable WAL mode and Foreign Keys
-db.pragma('journal_mode = WAL');
+// Enable WAL mode or DELETE mode on Vercel, and Foreign Keys
+db.pragma(isVercel ? 'journal_mode = DELETE' : 'journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 function initSchema() {
