@@ -141,10 +141,6 @@ export default function POS() {
     setCustomerMode('existing');
   };
 
-  // Bill Discount State
-  const [billDiscountMode, setBillDiscountMode] = useState('percent'); // 'percent' | 'fixed'
-  const [billDiscountValue, setBillDiscountValue] = useState('');
-
   // Add phone to cart
   const addToCart = (phone) => {
     if (cart.find(item => item.id === phone.id)) {
@@ -202,54 +198,6 @@ export default function POS() {
     updateItemDiscount(phoneId, discount, 'fixed');
   };
 
-  // Bill-wide discount updater across all items
-  const applyBillDiscount = (val, mode) => {
-    const activeMode = mode !== undefined ? mode : billDiscountMode;
-    const activeVal = val !== undefined ? val : billDiscountValue;
-    setBillDiscountValue(activeVal);
-    if (mode !== undefined) setBillDiscountMode(mode);
-
-    const num = parseFloat(activeVal) || 0;
-    if (activeVal === '' || num <= 0 || !cart.length) {
-      if (activeVal === '' || num === 0) {
-        setCart(cart.map(item => ({
-          ...item,
-          discount_mode: activeMode,
-          discount_value: '',
-          discount: 0
-        })));
-      }
-      return;
-    }
-
-    if (activeMode === 'percent') {
-      const clampedPercent = Math.min(100, Math.max(0, num));
-      setCart(cart.map(item => {
-        const rupeeDiscount = Math.round(((item.selling_price * clampedPercent) / 100) * 100) / 100;
-        return {
-          ...item,
-          discount_mode: 'percent',
-          discount_value: clampedPercent.toString(),
-          discount: rupeeDiscount
-        };
-      }));
-    } else {
-      const totalCartPrice = cart.reduce((acc, it) => acc + (parseFloat(it.selling_price) || 0), 0);
-      const targetDiscount = Math.min(totalCartPrice, Math.max(0, num));
-
-      setCart(cart.map(item => {
-        const itemShare = totalCartPrice > 0 ? (item.selling_price / totalCartPrice) : 0;
-        const itemRupeeDiscount = Math.round(targetDiscount * itemShare * 100) / 100;
-        return {
-          ...item,
-          discount_mode: 'fixed',
-          discount_value: itemRupeeDiscount.toString(),
-          discount: itemRupeeDiscount
-        };
-      }));
-    }
-  };
-
   // Calculate totals strictly using Company Settings GST rate (systemTaxRate)
   const subtotal = cart.reduce((acc, item) => acc + (parseFloat(item.selling_price) || 0), 0);
   const totalDiscount = cart.reduce((acc, item) => acc + (parseFloat(item.discount) || 0), 0);
@@ -302,7 +250,6 @@ export default function POS() {
         }
         // Reset Cart and refresh inventory
         setCart([]);
-        setBillDiscountValue('');
         searchInventory();
       } else {
         setError(res.message || 'Failed to complete sale.');
@@ -575,10 +522,7 @@ export default function POS() {
               </span>
               {cart.length > 0 && (
                 <button
-                  onClick={() => {
-                    setCart([]);
-                    setBillDiscountValue('');
-                  }}
+                  onClick={() => setCart([])}
                   className="text-[11px] text-rose-600 hover:text-rose-700 font-medium"
                 >
                   Clear All
@@ -731,96 +675,6 @@ export default function POS() {
                     </div>
                   );
                 })}
-              </div>
-            )}
-
-            {/* Bill-Wide Discount Section */}
-            {cart.length > 0 && (
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-slate-700 font-bold text-[11px]">
-                    <Percent className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Bill-Wide Discount</span>
-                  </div>
-                  <div className="inline-flex items-center bg-slate-200/70 p-0.5 rounded-lg text-[10px] font-bold">
-                    <button
-                      type="button"
-                      onClick={() => applyBillDiscount(billDiscountValue, 'percent')}
-                      className={`px-2 py-0.5 rounded transition ${billDiscountMode === 'percent' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
-                    >
-                      % Percent
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyBillDiscount(billDiscountValue, 'fixed')}
-                      className={`px-2 py-0.5 rounded transition ${billDiscountMode === 'fixed' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
-                    >
-                      ₹ Flat
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="number"
-                      min="0"
-                      max={billDiscountMode === 'percent' ? 100 : subtotal}
-                      placeholder={billDiscountMode === 'percent' ? "e.g. 10 (for 10% on all items)" : "e.g. 1000 (flat ₹1000)"}
-                      value={billDiscountValue}
-                      onChange={(e) => applyBillDiscount(e.target.value, billDiscountMode)}
-                      className="w-full pl-6 pr-3 py-1 text-xs bg-white border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-                    />
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">
-                      {billDiscountMode === 'percent' ? '%' : '₹'}
-                    </span>
-                  </div>
-                  {billDiscountValue && (
-                    <button
-                      type="button"
-                      onClick={() => applyBillDiscount('', billDiscountMode)}
-                      className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                    >
-                      Reset
-                    </button>
-                  )}
-                </div>
-
-                {/* Preset Chips */}
-                <div className="flex items-center gap-1 text-[10px] overflow-x-auto pb-0.5">
-                  <span className="text-slate-400 text-[9px] shrink-0">Presets:</span>
-                  {billDiscountMode === 'percent' ? (
-                    [3, 5, 8, 10, 15].map(pct => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => applyBillDiscount(pct.toString(), 'percent')}
-                        className={`px-2 py-0.5 rounded-md border shrink-0 font-medium transition ${
-                          billDiscountValue === pct.toString() && billDiscountMode === 'percent'
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
-                        }`}
-                      >
-                        {pct}%
-                      </button>
-                    ))
-                  ) : (
-                    [500, 1000, 1500, 2000].map(amt => (
-                      <button
-                        key={amt}
-                        type="button"
-                        onClick={() => applyBillDiscount(amt.toString(), 'fixed')}
-                        className={`px-2 py-0.5 rounded-md border shrink-0 font-medium transition ${
-                          billDiscountValue === amt.toString() && billDiscountMode === 'fixed'
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
-                        }`}
-                      >
-                        ₹{amt}
-                      </button>
-                    ))
-                  )}
-                </div>
               </div>
             )}
 
