@@ -125,6 +125,10 @@ export default function POS() {
     setCustomerMode('existing');
   };
 
+  // Bill Discount State
+  const [billDiscountMode, setBillDiscountMode] = useState('percent'); // 'percent' | 'fixed'
+  const [billDiscountValue, setBillDiscountValue] = useState('');
+
   // Add phone to cart
   const addToCart = (phone) => {
     if (cart.find(item => item.id === phone.id)) {
@@ -134,7 +138,9 @@ export default function POS() {
 
     setCart([...cart, {
       ...phone,
-      selling_price: phone.selling_price,
+      selling_price: parseFloat(phone.selling_price) || 0,
+      discount_mode: 'percent',
+      discount_value: '',
       discount: 0
     }]);
     setError('');
@@ -144,18 +150,89 @@ export default function POS() {
     setCart(cart.filter(item => item.id !== phoneId));
   };
 
-  const updateDiscount = (phoneId, discount) => {
+  // Item-level discount updater
+  const updateItemDiscount = (phoneId, val, mode) => {
     setCart(cart.map(item => {
       if (item.id === phoneId) {
-        return { ...item, discount: Math.max(0, parseFloat(discount || 0)) };
+        const itemMode = mode !== undefined ? mode : (item.discount_mode || 'percent');
+        const rawVal = val !== undefined ? val : (item.discount_value || '');
+        const numVal = parseFloat(rawVal) || 0;
+        let rupeeDiscount = 0;
+
+        if (itemMode === 'percent') {
+          const clampedPercent = Math.min(100, Math.max(0, numVal));
+          rupeeDiscount = Math.round(((item.selling_price * clampedPercent) / 100) * 100) / 100;
+        } else {
+          rupeeDiscount = Math.min(item.selling_price, Math.max(0, numVal));
+        }
+
+        return {
+          ...item,
+          discount_mode: itemMode,
+          discount_value: rawVal,
+          discount: rupeeDiscount
+        };
       }
       return item;
     }));
   };
 
+  const updateDiscount = (phoneId, discount) => {
+    updateItemDiscount(phoneId, discount, 'fixed');
+  };
+
+  // Bill-wide discount updater across all items
+  const applyBillDiscount = (val, mode) => {
+    const activeMode = mode !== undefined ? mode : billDiscountMode;
+    const activeVal = val !== undefined ? val : billDiscountValue;
+    setBillDiscountValue(activeVal);
+    if (mode !== undefined) setBillDiscountMode(mode);
+
+    const num = parseFloat(activeVal) || 0;
+    if (activeVal === '' || num <= 0 || !cart.length) {
+      if (activeVal === '' || num === 0) {
+        setCart(cart.map(item => ({
+          ...item,
+          discount_mode: activeMode,
+          discount_value: '',
+          discount: 0
+        })));
+      }
+      return;
+    }
+
+    if (activeMode === 'percent') {
+      const clampedPercent = Math.min(100, Math.max(0, num));
+      setCart(cart.map(item => {
+        const rupeeDiscount = Math.round(((item.selling_price * clampedPercent) / 100) * 100) / 100;
+        return {
+          ...item,
+          discount_mode: 'percent',
+          discount_value: clampedPercent.toString(),
+          discount: rupeeDiscount
+        };
+      }));
+    } else {
+      const totalCartPrice = cart.reduce((acc, it) => acc + (parseFloat(it.selling_price) || 0), 0);
+      const targetDiscount = Math.min(totalCartPrice, Math.max(0, num));
+
+      setCart(cart.map(item => {
+        const itemShare = totalCartPrice > 0 ? (item.selling_price / totalCartPrice) : 0;
+        const itemRupeeDiscount = Math.round(targetDiscount * itemShare * 100) / 100;
+        return {
+          ...item,
+          discount_mode: 'fixed',
+          discount_value: itemRupeeDiscount.toString(),
+          discount: itemRupeeDiscount
+        };
+      }));
+    }
+  };
+
   // Calculate totals
   const subtotal = cart.reduce((acc, item) => acc + (parseFloat(item.selling_price) || 0), 0);
   const totalDiscount = cart.reduce((acc, item) => acc + (parseFloat(item.discount) || 0), 0);
+  const overallDiscountPercent = subtotal > 0 ? ((totalDiscount / subtotal) * 100) : 0;
   const taxableAmount = Math.max(0, subtotal - totalDiscount);
   const totalTax = Math.round((taxableAmount * 0.18) * 100) / 100; // Standard 18% GST
   const grandTotal = taxableAmount + totalTax;
@@ -204,6 +281,7 @@ export default function POS() {
         }
         // Reset Cart and refresh inventory
         setCart([]);
+        setBillDiscountValue('');
         searchInventory();
       } else {
         setError(res.message || 'Failed to complete sale.');
@@ -476,7 +554,10 @@ export default function POS() {
               </span>
               {cart.length > 0 && (
                 <button
-                  onClick={() => setCart([])}
+                  onClick={() => {
+                    setCart([]);
+                    setBillDiscountValue('');
+                  }}
                   className="text-[11px] text-rose-600 hover:text-rose-700 font-medium"
                 >
                   Clear All
@@ -490,40 +571,235 @@ export default function POS() {
                 <p className="text-[11px] text-slate-300 mt-0.5">Select devices from the left inventory panel.</p>
               </div>
             ) : (
-              <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
-                {cart.map((item) => (
-                  <div key={item.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="font-bold text-slate-900">{item.brand} {item.model}</div>
-                        <div className="font-mono text-[10px] text-emerald-700">IMEI: {item.imei1}</div>
-                      </div>
-                      <button
-                        onClick={() => removeFromCart(item.id)}
-                        className="text-slate-400 hover:text-rose-600 p-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+              <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                {cart.map((item) => {
+                  const itemSellingPrice = parseFloat(item.selling_price) || 0;
+                  const itemDiscount = parseFloat(item.discount) || 0;
+                  const itemNetPrice = Math.max(0, itemSellingPrice - itemDiscount);
+                  const itemPercent = itemSellingPrice > 0 ? ((itemDiscount / itemSellingPrice) * 100) : 0;
 
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-200/60">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-slate-500 font-medium">Discount: ₹</span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={item.discount || ''}
-                          onChange={(e) => updateDiscount(item.id, e.target.value)}
-                          placeholder="0"
-                          className="w-16 px-1.5 py-0.5 text-[11px] bg-white border border-slate-200 rounded text-right font-medium"
-                        />
+                  return (
+                    <div key={item.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-bold text-slate-900">{item.brand} {item.model}</div>
+                          <div className="text-[11px] text-slate-500">{item.variant} {item.color ? `• ${item.color}` : ''}</div>
+                          <div className="font-mono text-[10px] text-emerald-700 font-medium">IMEI: {item.imei1}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            {itemDiscount > 0 ? (
+                              <div>
+                                <span className="line-through text-slate-400 text-[10px] block">
+                                  {formatCurrency(itemSellingPrice)}
+                                </span>
+                                <span className="font-extrabold text-emerald-700 text-xs block">
+                                  {formatCurrency(itemNetPrice)}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-extrabold text-slate-900 text-xs block">
+                                {formatCurrency(itemSellingPrice)}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => removeFromCart(item.id)}
+                            className="text-slate-400 hover:text-rose-600 p-1 rounded-lg hover:bg-slate-200/50 transition"
+                            title="Remove from cart"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <span className="font-bold text-slate-900">
-                        {formatCurrency(item.selling_price - (item.discount || 0))}
-                      </span>
+
+                      {/* Discount Control Section */}
+                      <div className="pt-2 border-t border-slate-200/70 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Discount:</span>
+                            {/* Toggle % vs ₹ */}
+                            <div className="inline-flex items-center bg-slate-200/70 p-0.5 rounded-lg text-[10px] font-bold">
+                              <button
+                                type="button"
+                                onClick={() => updateItemDiscount(item.id, item.discount_value, 'percent')}
+                                className={`px-2 py-0.5 rounded transition ${item.discount_mode === 'percent' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                              >
+                                %
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateItemDiscount(item.id, item.discount_value, 'fixed')}
+                                className={`px-2 py-0.5 rounded transition ${item.discount_mode === 'fixed' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                              >
+                                ₹
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Discount Input */}
+                          <div className="relative flex items-center">
+                            <input
+                              type="number"
+                              min="0"
+                              max={item.discount_mode === 'percent' ? 100 : itemSellingPrice}
+                              value={item.discount_value !== undefined ? item.discount_value : (item.discount || '')}
+                              onChange={(e) => updateItemDiscount(item.id, e.target.value, item.discount_mode)}
+                              placeholder="0"
+                              className="w-20 pl-2 pr-5 py-1 text-[11px] bg-white border border-slate-200 rounded-lg text-right font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                            />
+                            <span className="absolute right-2 text-[10px] font-bold text-slate-400 pointer-events-none">
+                              {item.discount_mode === 'percent' ? '%' : '₹'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Quick discount presets & badge */}
+                        <div className="flex items-center justify-between gap-1 text-[10px]">
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-400 text-[9px]">Quick:</span>
+                            {item.discount_mode === 'percent' ? (
+                              [5, 10, 15].map(pct => (
+                                <button
+                                  key={pct}
+                                  type="button"
+                                  onClick={() => updateItemDiscount(item.id, pct.toString(), 'percent')}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border transition ${
+                                    item.discount_value === pct.toString() && item.discount_mode === 'percent'
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                                  }`}
+                                >
+                                  {pct}%
+                                </button>
+                              ))
+                            ) : (
+                              [500, 1000, 2000].map(amt => (
+                                <button
+                                  key={amt}
+                                  type="button"
+                                  onClick={() => updateItemDiscount(item.id, amt.toString(), 'fixed')}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border transition ${
+                                    item.discount_value === amt.toString() && item.discount_mode === 'fixed'
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                                  }`}
+                                >
+                                  ₹{amt}
+                                </button>
+                              ))
+                            )}
+                            {(item.discount > 0 || item.discount_value) && (
+                              <button
+                                type="button"
+                                onClick={() => updateItemDiscount(item.id, '', item.discount_mode)}
+                                className="text-[9px] text-rose-500 hover:text-rose-700 font-semibold px-1"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+
+                          {itemDiscount > 0 && (
+                            <span className="text-[10px] font-bold text-rose-600">
+                              Saved: -{formatCurrency(itemDiscount)} ({itemPercent.toFixed(1).replace(/\.0$/, '')}%)
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Bill-Wide Discount Section */}
+            {cart.length > 0 && (
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-slate-700 font-bold text-[11px]">
+                    <Percent className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Bill-Wide Discount</span>
                   </div>
-                ))}
+                  <div className="inline-flex items-center bg-slate-200/70 p-0.5 rounded-lg text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => applyBillDiscount(billDiscountValue, 'percent')}
+                      className={`px-2 py-0.5 rounded transition ${billDiscountMode === 'percent' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      % Percent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyBillDiscount(billDiscountValue, 'fixed')}
+                      className={`px-2 py-0.5 rounded transition ${billDiscountMode === 'fixed' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      ₹ Flat
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min="0"
+                      max={billDiscountMode === 'percent' ? 100 : subtotal}
+                      placeholder={billDiscountMode === 'percent' ? "e.g. 10 (for 10% on all items)" : "e.g. 1000 (flat ₹1000)"}
+                      value={billDiscountValue}
+                      onChange={(e) => applyBillDiscount(e.target.value, billDiscountMode)}
+                      className="w-full pl-6 pr-3 py-1 text-xs bg-white border border-slate-200 rounded-lg font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    />
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">
+                      {billDiscountMode === 'percent' ? '%' : '₹'}
+                    </span>
+                  </div>
+                  {billDiscountValue && (
+                    <button
+                      type="button"
+                      onClick={() => applyBillDiscount('', billDiscountMode)}
+                      className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex items-center gap-1 text-[10px] overflow-x-auto pb-0.5">
+                  <span className="text-slate-400 text-[9px] shrink-0">Presets:</span>
+                  {billDiscountMode === 'percent' ? (
+                    [3, 5, 8, 10, 15].map(pct => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => applyBillDiscount(pct.toString(), 'percent')}
+                        className={`px-2 py-0.5 rounded-md border shrink-0 font-medium transition ${
+                          billDiscountValue === pct.toString() && billDiscountMode === 'percent'
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))
+                  ) : (
+                    [500, 1000, 1500, 2000].map(amt => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => applyBillDiscount(amt.toString(), 'fixed')}
+                        className={`px-2 py-0.5 rounded-md border shrink-0 font-medium transition ${
+                          billDiscountValue === amt.toString() && billDiscountMode === 'fixed'
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                        }`}
+                      >
+                        ₹{amt}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
             )}
 
@@ -534,9 +810,11 @@ export default function POS() {
                 <span>{formatCurrency(subtotal)}</span>
               </div>
               {totalDiscount > 0 && (
-                <div className="flex justify-between text-rose-600">
-                  <span>Discount:</span>
-                  <span>-{formatCurrency(totalDiscount)}</span>
+                <div className="flex justify-between text-rose-600 font-medium">
+                  <span>
+                    Final Discount {overallDiscountPercent > 0 ? `(${overallDiscountPercent.toFixed(1).replace(/\.0$/, '')}%)` : ''}:
+                  </span>
+                  <span className="font-bold">-{formatCurrency(totalDiscount)}</span>
                 </div>
               )}
               <div className="flex justify-between text-slate-600">

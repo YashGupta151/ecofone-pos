@@ -139,6 +139,12 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                         <span>Grade: {item.condition_grade}</span>
                         <span className="font-bold">{formatCurrency(item.final_price)}</span>
                       </div>
+                      {item.discount > 0 && (
+                        <div className="flex justify-between text-[9px] text-rose-600">
+                          <span>Discount ({item.selling_price > 0 ? ((item.discount / item.selling_price) * 100).toFixed(1).replace(/\.0$/, '') : 0}%):</span>
+                          <span>-{formatCurrency(item.discount)}</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -150,8 +156,8 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     <span>{formatCurrency(sale?.subtotal)}</span>
                   </div>
                   {sale?.discount_total > 0 && (
-                    <div className="flex justify-between text-rose-600">
-                      <span>Discount:</span>
+                    <div className="flex justify-between text-rose-600 font-semibold">
+                      <span>Final Discount {sale?.subtotal > 0 ? `(${((sale.discount_total / sale.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}:</span>
                       <span>-{formatCurrency(sale?.discount_total)}</span>
                     </div>
                   )}
@@ -303,8 +309,17 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                           <td className="py-2.5 px-2 text-right font-medium text-slate-700">
                             {formatCurrency(item.selling_price)}
                           </td>
-                          <td className="py-2.5 px-2 text-right text-rose-600 font-medium">
-                            {item.discount > 0 ? `-${formatCurrency(item.discount)}` : '₹0'}
+                          <td className="py-2.5 px-2 text-right font-medium">
+                            {item.discount > 0 ? (
+                              <div>
+                                <div className="text-rose-600 font-bold">-{formatCurrency(item.discount)}</div>
+                                <div className="text-[10px] text-slate-500 font-semibold">
+                                  ({item.selling_price > 0 ? ((item.discount / item.selling_price) * 100).toFixed(1).replace(/\.0$/, '') : 0}%)
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">₹0</span>
+                            )}
                           </td>
                           <td className="py-2.5 px-2 text-right font-medium text-slate-800">
                             {formatCurrency(item.taxable_amount)}
@@ -347,9 +362,11 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                       <span className="font-medium">{formatCurrency(sale?.subtotal)}</span>
                     </div>
                     {sale?.discount_total > 0 && (
-                      <div className="flex justify-between text-rose-600">
-                        <span>Discount:</span>
-                        <span className="font-medium">-{formatCurrency(sale?.discount_total)}</span>
+                      <div className="flex justify-between text-rose-600 font-medium">
+                        <span>
+                          Final Discount {sale?.subtotal > 0 ? `(${((sale.discount_total / sale.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}:
+                        </span>
+                        <span className="font-bold">-{formatCurrency(sale?.discount_total)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-slate-700 font-medium pt-1 border-t border-slate-200">
