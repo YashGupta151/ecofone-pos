@@ -220,6 +220,9 @@ router.post('/', authenticateToken, (req, res) => {
 
     // 2. Validate all phones
     // Rule 1 & Rule 2: One IMEI cannot be sold twice; A SOLD phone cannot be sold again
+    const defaultTaxSetting = db.prepare(`SELECT value FROM settings WHERE key = 'default_tax_rate'`).get();
+    const systemDefaultTaxRate = defaultTaxSetting && !isNaN(parseFloat(defaultTaxSetting.value)) ? parseFloat(defaultTaxSetting.value) : 18.0;
+
     let subtotal = 0;
     let discountTotal = 0;
     let taxableAmountTotal = 0;
@@ -249,7 +252,9 @@ router.post('/', authenticateToken, (req, res) => {
       const sPrice = parseFloat(item.selling_price || phone.selling_price);
       const disc = parseFloat(item.discount || 0);
       const taxable = sPrice - disc;
-      const tRate = parseFloat(item.tax_rate || phone.tax_rate || 18.0);
+      const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
+        ? parseFloat(item.tax_rate)
+        : (phone.tax_rate !== undefined && phone.tax_rate !== null && !isNaN(parseFloat(phone.tax_rate)) ? parseFloat(phone.tax_rate) : systemDefaultTaxRate);
 
       // Tax Logic: If customer state != store state -> IGST, else CGST + SGST
       const isInterState = custRecord.state && store.state && custRecord.state.toLowerCase() !== store.state.toLowerCase();

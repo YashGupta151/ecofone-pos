@@ -8,6 +8,13 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
   if (!invoiceData) return null;
   const { sale, items = [], payments = [], company = {} } = invoiceData;
 
+  // Calculate dynamic GST rates based on actual invoice items/sale values
+  const totalTaxRate = (sale?.taxable_amount > 0 && sale?.total_tax > 0)
+    ? Math.round(((sale.total_tax / sale.taxable_amount) * 100) * 10) / 10
+    : (items[0]?.tax_rate || 18);
+  const halfTaxRate = (totalTaxRate / 2).toFixed(1).replace(/\.0$/, '');
+  const fullTaxRate = totalTaxRate.toString().replace(/\.0$/, '');
+
   const handlePrint = (format) => {
     setPrintFormat(format);
     setTimeout(() => {
@@ -167,19 +174,19 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                   </div>
                   {sale?.cgst > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>CGST (9%):</span>
+                      <span>CGST ({halfTaxRate}%):</span>
                       <span>{formatCurrency(sale.cgst)}</span>
                     </div>
                   )}
                   {sale?.sgst > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>SGST (9%):</span>
+                      <span>SGST ({halfTaxRate}%):</span>
                       <span>{formatCurrency(sale.sgst)}</span>
                     </div>
                   )}
                   {sale?.igst > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>IGST (18%):</span>
+                      <span>IGST ({fullTaxRate}%):</span>
                       <span>{formatCurrency(sale.igst)}</span>
                     </div>
                   )}
@@ -375,19 +382,19 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     </div>
                     {sale?.cgst > 0 && (
                       <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>CGST (9%):</span>
+                        <span>CGST ({halfTaxRate}%):</span>
                         <span>{formatCurrency(sale.cgst)}</span>
                       </div>
                     )}
                     {sale?.sgst > 0 && (
                       <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>SGST (9%):</span>
+                        <span>SGST ({halfTaxRate}%):</span>
                         <span>{formatCurrency(sale.sgst)}</span>
                       </div>
                     )}
                     {sale?.igst > 0 && (
                       <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>IGST (18%):</span>
+                        <span>IGST ({fullTaxRate}%):</span>
                         <span>{formatCurrency(sale.igst)}</span>
                       </div>
                     )}
