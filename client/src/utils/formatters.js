@@ -78,3 +78,41 @@ export function getStatusBadge(status) {
       };
   }
 }
+
+export function numberToWordsINR(amount) {
+  if (!amount || isNaN(amount)) return 'Zero Rupees Only';
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  const n = Math.floor(Math.abs(amount));
+  if (n === 0) return 'Zero Rupees Only';
+
+  function convertHundreds(num) {
+    let str = '';
+    if (num > 99) {
+      str += a[Math.floor(num / 100)] + ' Hundred ';
+      num %= 100;
+    }
+    if (num > 19) {
+      str += b[Math.floor(num / 10)] + (num % 10 ? ' ' + a[num % 10] : '');
+    } else if (num > 0) {
+      str += a[num];
+    }
+    return str.trim();
+  }
+
+  let words = '';
+  const crore = Math.floor(n / 10000000);
+  const lakh = Math.floor((n % 10000000) / 100000);
+  const thousand = Math.floor((n % 100000) / 1000);
+  const remainder = n % 1000;
+
+  if (crore > 0) words += convertHundreds(crore) + ' Crore ';
+  if (lakh > 0) words += convertHundreds(lakh) + ' Lakh ';
+  if (thousand > 0) words += convertHundreds(thousand) + ' Thousand ';
+  if (remainder > 0) words += convertHundreds(remainder);
+
+  return (words.trim() + ' Rupees Only').replace(/\s+/g, ' ');
+}
+
