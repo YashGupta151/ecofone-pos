@@ -60,15 +60,8 @@ export default function POS() {
   const [error, setError] = useState('');
   const [completedInvoice, setCompletedInvoice] = useState(null);
 
-  // System GST & Tax Rates configuration
+  // System GST Tax Rate from Company Settings
   const [systemTaxRate, setSystemTaxRate] = useState(18.0);
-  const [availableTaxRates, setAvailableTaxRates] = useState([
-    { name: '0% (Exempt)', rate: 0 },
-    { name: '5% GST', rate: 5 },
-    { name: '12% GST', rate: 12 },
-    { name: '18% GST', rate: 18 },
-    { name: '28% GST', rate: 28 }
-  ]);
 
   // Load stores & system settings on mount
   useEffect(() => {
@@ -92,9 +85,6 @@ export default function POS() {
             if (!isNaN(parsedRate)) {
               setSystemTaxRate(parsedRate);
             }
-          }
-          if (settingsRes.taxRates && settingsRes.taxRates.length > 0) {
-            setAvailableTaxRates(settingsRes.taxRates);
           }
         }
       } catch (e) {
@@ -212,28 +202,6 @@ export default function POS() {
     updateItemDiscount(phoneId, discount, 'fixed');
   };
 
-  // Item-level tax rate updater
-  const updateItemTaxRate = (phoneId, rate) => {
-    setCart(cart.map(item => {
-      if (item.id === phoneId) {
-        return {
-          ...item,
-          tax_rate: Math.max(0, parseFloat(rate) || 0)
-        };
-      }
-      return item;
-    }));
-  };
-
-  // Bill-wide tax rate updater
-  const applyBillTaxRate = (rate) => {
-    const numRate = Math.max(0, parseFloat(rate) || 0);
-    setCart(cart.map(item => ({
-      ...item,
-      tax_rate: numRate
-    })));
-  };
-
   // Bill-wide discount updater across all items
   const applyBillDiscount = (val, mode) => {
     const activeMode = mode !== undefined ? mode : billDiscountMode;
@@ -282,28 +250,13 @@ export default function POS() {
     }
   };
 
-  // Calculate totals
+  // Calculate totals strictly using Company Settings GST rate (systemTaxRate)
   const subtotal = cart.reduce((acc, item) => acc + (parseFloat(item.selling_price) || 0), 0);
   const totalDiscount = cart.reduce((acc, item) => acc + (parseFloat(item.discount) || 0), 0);
   const overallDiscountPercent = subtotal > 0 ? ((totalDiscount / subtotal) * 100) : 0;
   const taxableAmount = Math.max(0, subtotal - totalDiscount);
-
-  // Dynamic GST calculation based on item-level tax_rate and taxable amount
-  const totalTax = cart.reduce((acc, item) => {
-    const itemSelling = parseFloat(item.selling_price) || 0;
-    const itemDisc = parseFloat(item.discount) || 0;
-    const itemTaxable = Math.max(0, itemSelling - itemDisc);
-    const itemRate = parseFloat(item.tax_rate !== undefined ? item.tax_rate : systemTaxRate) || 0;
-    const itemTaxAmount = Math.round((itemTaxable * (itemRate / 100)) * 100) / 100;
-    return acc + itemTaxAmount;
-  }, 0);
-
+  const totalTax = Math.round((taxableAmount * (systemTaxRate / 100)) * 100) / 100;
   const grandTotal = taxableAmount + totalTax;
-
-  // Compute effective average tax rate for display
-  const avgTaxRate = (taxableAmount > 0 && totalTax > 0)
-    ? Math.round(((totalTax / taxableAmount) * 100) * 10) / 10
-    : (cart.length > 0 ? (cart[0].tax_rate !== undefined ? cart[0].tax_rate : systemTaxRate) : systemTaxRate);
 
   // Complete Sale Execution
   const handleCompleteSale = async () => {
@@ -774,32 +727,6 @@ export default function POS() {
                             </span>
                           )}
                         </div>
-
-                        {/* Item GST Slab Selector */}
-                        <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/50 text-[10px]">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">GST Rate:</span>
-                            <div className="flex items-center gap-1">
-                              {[0, 5, 12, 18, 28].map(rate => (
-                                <button
-                                  key={rate}
-                                  type="button"
-                                  onClick={() => updateItemTaxRate(item.id, rate)}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition ${
-                                    (item.tax_rate !== undefined ? item.tax_rate : systemTaxRate) === rate
-                                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
-                                  }`}
-                                >
-                                  {rate}%
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <span className="text-[10px] text-slate-500 font-semibold">
-                            GST: {formatCurrency(Math.round((itemNetPrice * ((item.tax_rate !== undefined ? item.tax_rate : systemTaxRate) / 100)) * 100) / 100)}
-                          </span>
-                        </div>
                       </div>
                     </div>
                   );
@@ -894,30 +821,6 @@ export default function POS() {
                     ))
                   )}
                 </div>
-
-                {/* Bill-Wide GST Slab Selector */}
-                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Bill GST Slab:</span>
-                  <div className="flex items-center gap-1">
-                    {[0, 5, 12, 18, 28].map(rate => {
-                      const allMatch = cart.length > 0 && cart.every(it => (it.tax_rate !== undefined ? it.tax_rate : systemTaxRate) === rate);
-                      return (
-                        <button
-                          key={rate}
-                          type="button"
-                          onClick={() => applyBillTaxRate(rate)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold border transition ${
-                            allMatch
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                              : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
-                          }`}
-                        >
-                          {rate}%
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             )}
 
@@ -940,7 +843,7 @@ export default function POS() {
                 <span>{formatCurrency(taxableAmount)}</span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>GST ({avgTaxRate}% Included):</span>
+                <span>GST ({systemTaxRate}% Included):</span>
                 <span className="font-medium">{formatCurrency(totalTax)}</span>
               </div>
               <div className="flex justify-between text-base font-extrabold text-slate-900 pt-2 border-t border-slate-200">
