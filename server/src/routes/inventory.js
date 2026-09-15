@@ -223,7 +223,9 @@ router.post('/', authenticateToken, (req, res) => {
 
   const sPrice = parseFloat(selling_price);
   const disc = parseFloat(discount || 0);
-  const tRate = parseFloat(tax_rate || 18.0);
+  const defaultTaxRow = db.prepare(`SELECT value FROM settings WHERE key = 'default_tax_rate'`).get();
+  const fallbackTaxRate = defaultTaxRow && !isNaN(parseFloat(defaultTaxRow.value)) ? parseFloat(defaultTaxRow.value) : 18.0;
+  const tRate = (tax_rate !== undefined && tax_rate !== null && !isNaN(parseFloat(tax_rate))) ? parseFloat(tax_rate) : fallbackTaxRate;
   const taxable = sPrice - disc;
   const finalPrice = taxable + (taxable * (tRate / 100));
 

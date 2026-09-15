@@ -254,7 +254,7 @@ router.post('/', authenticateToken, (req, res) => {
       const taxable = sPrice - disc;
       const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
         ? parseFloat(item.tax_rate)
-        : (phone.tax_rate !== undefined && phone.tax_rate !== null && !isNaN(parseFloat(phone.tax_rate)) ? parseFloat(phone.tax_rate) : systemDefaultTaxRate);
+        : systemDefaultTaxRate;
 
       // Tax Logic: If customer state != store state -> IGST, else CGST + SGST
       const isInterState = custRecord.state && store.state && custRecord.state.toLowerCase() !== store.state.toLowerCase();

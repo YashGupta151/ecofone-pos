@@ -80,7 +80,7 @@ export default function POS() {
         }
 
         if (settingsRes && settingsRes.success) {
-          if (settingsRes.settings && settingsRes.settings.default_tax_rate) {
+          if (settingsRes.settings && settingsRes.settings.default_tax_rate !== undefined && settingsRes.settings.default_tax_rate !== '') {
             const parsedRate = parseFloat(settingsRes.settings.default_tax_rate);
             if (!isNaN(parsedRate)) {
               setSystemTaxRate(parsedRate);
@@ -93,6 +93,17 @@ export default function POS() {
     }
     loadInitialData();
   }, [isAdmin, user]);
+
+  // Keep cart items' tax_rate synchronized with systemTaxRate from Company Settings
+  useEffect(() => {
+    setCart(prevCart => {
+      if (!prevCart || !prevCart.length) return prevCart;
+      return prevCart.map(item => ({
+        ...item,
+        tax_rate: systemTaxRate
+      }));
+    });
+  }, [systemTaxRate]);
 
   // Search available phones in selected store
   const searchInventory = async () => {
@@ -148,17 +159,13 @@ export default function POS() {
       return;
     }
 
-    const initialTaxRate = (phone.tax_rate !== undefined && phone.tax_rate !== null && !isNaN(parseFloat(phone.tax_rate)))
-      ? parseFloat(phone.tax_rate)
-      : systemTaxRate;
-
     setCart([...cart, {
       ...phone,
       selling_price: parseFloat(phone.selling_price) || 0,
       discount_mode: 'percent',
       discount_value: '',
       discount: 0,
-      tax_rate: initialTaxRate
+      tax_rate: systemTaxRate
     }]);
     setError('');
   };
@@ -230,7 +237,9 @@ export default function POS() {
           phone_id: item.id,
           selling_price: item.selling_price,
           discount: item.discount,
-          tax_rate: item.tax_rate !== undefined ? item.tax_rate : systemTaxRate
+          tax_rate: (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
+            ? parseFloat(item.tax_rate)
+            : systemTaxRate
         })),
         payment_method: paymentMethod,
         reference_number: referenceNumber,

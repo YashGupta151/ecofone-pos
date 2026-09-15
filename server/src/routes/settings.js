@@ -33,6 +33,17 @@ router.put('/', authenticateToken, requireAdmin, (req, res) => {
     for (const [key, val] of Object.entries(settings)) {
       upsert.run(key, String(val));
     }
+
+    if (settings.default_tax_rate !== undefined && settings.default_tax_rate !== null && !isNaN(parseFloat(settings.default_tax_rate))) {
+      const newRate = parseFloat(settings.default_tax_rate);
+      db.prepare(`UPDATE phone_inventory SET tax_rate = ? WHERE stock_status = 'AVAILABLE'`).run(newRate);
+      db.prepare(`UPDATE tax_rates SET rate = ?, cgst_rate = ?, sgst_rate = ?, igst_rate = ? WHERE is_default = 1`).run(
+        newRate,
+        Math.round((newRate / 2) * 10) / 10,
+        Math.round((newRate / 2) * 10) / 10,
+        newRate
+      );
+    }
   });
 
   saveTx();
