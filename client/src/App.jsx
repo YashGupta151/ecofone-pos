@@ -73,6 +73,7 @@ export default function App() {
             <Route path="admin/employees" element={<ProtectedRoute requireAdmin><Employees /></ProtectedRoute>} />
             <Route path="admin/inventory" element={<ProtectedRoute requireAdmin><Inventory /></ProtectedRoute>} />
             <Route path="admin/purchases" element={<ProtectedRoute requireAdmin><Purchases /></ProtectedRoute>} />
+            <Route path="admin/stock-entry" element={<ProtectedRoute requireAdmin><Purchases /></ProtectedRoute>} />
             <Route path="admin/transfers" element={<ProtectedRoute requireAdmin><Transfers /></ProtectedRoute>} />
             <Route path="admin/pos" element={<ProtectedRoute requireAdmin><POS /></ProtectedRoute>} />
             <Route path="admin/customers" element={<ProtectedRoute requireAdmin><Customers /></ProtectedRoute>} />
@@ -89,6 +90,8 @@ export default function App() {
             <Route path="employee/dashboard" element={<ProtectedRoute><EmployeeDashboard /></ProtectedRoute>} />
             <Route path="employee/pos" element={<ProtectedRoute><POS /></ProtectedRoute>} />
             <Route path="employee/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
+            <Route path="employee/stock-entry" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
+            <Route path="employee/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
             <Route path="employee/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
             <Route path="employee/sales" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
             <Route path="employee/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />

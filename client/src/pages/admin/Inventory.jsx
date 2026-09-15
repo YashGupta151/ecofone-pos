@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Smartphone, 
   Search, 
@@ -9,7 +10,8 @@ import {
   Eye, 
   AlertCircle,
   Tag,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -18,6 +20,7 @@ import IMEILifecycleModal from '../../components/ui/IMEILifecycleModal';
 
 export default function Inventory() {
   const { user, isAdmin } = useAuth();
+  const navigate = useNavigate();
 
   const [phones, setPhones] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -145,8 +148,8 @@ export default function Inventory() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition"
+            onClick={() => navigate(isAdmin ? '/admin/stock-entry' : '/employee/stock-entry')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add Refurbished Phone</span>
