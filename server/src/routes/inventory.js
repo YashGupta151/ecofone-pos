@@ -296,6 +296,19 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
     storeMap[s.name.toUpperCase()] = s.id;
   });
 
+  // Suppliers cache for resolving supplier by name or ID if specified per phone in excel
+  const allSuppliers = db.prepare(`SELECT id, name FROM suppliers`).all();
+  const supplierMap = {};
+  allSuppliers.forEach(s => {
+    supplierMap[String(s.id)] = s.id;
+    supplierMap[s.name.trim().toUpperCase()] = s.id;
+    supplierMap[s.name.trim().toUpperCase().replace(/\s+/g, '')] = s.id;
+  });
+
+  const insertSupplierStmt = db.prepare(`
+    INSERT INTO suppliers (name, status) VALUES (?, 'active')
+  `);
+
   // Fetch all existing IMEIs in memory set for ultra-fast lookup
   const existingImeisRows = db.prepare(`SELECT imei1, imei2 FROM phone_inventory`).all();
   const existingImeiSet = new Set();
@@ -381,6 +394,35 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
           targetStoreId = storeMap[String(dev.store_name).toUpperCase()];
         }
 
+        // Resolve supplier per phone row
+        let targetSupplierId = default_supplier_id ? parseInt(default_supplier_id) : null;
+        const rawSupplier = dev.supplier_name || dev.supplier_info || dev.supplier || dev.supplier_id || '';
+
+        if (rawSupplier) {
+          const supStr = String(rawSupplier).trim();
+          const supUpper = supStr.toUpperCase();
+          const supClean = supUpper.replace(/\s+/g, '');
+
+          if (supplierMap[supStr]) {
+            targetSupplierId = supplierMap[supStr];
+          } else if (supplierMap[supUpper]) {
+            targetSupplierId = supplierMap[supUpper];
+          } else if (supplierMap[supClean]) {
+            targetSupplierId = supplierMap[supClean];
+          } else if (supStr.length > 1) {
+            // Auto-register new supplier if provided in the Excel sheet
+            try {
+              const newSupInfo = insertSupplierStmt.run(supStr);
+              targetSupplierId = newSupInfo.lastInsertRowid;
+              supplierMap[String(targetSupplierId)] = targetSupplierId;
+              supplierMap[supUpper] = targetSupplierId;
+              supplierMap[supClean] = targetSupplierId;
+            } catch (e) {
+              // Retain fallback if failed
+            }
+          }
+        }
+
         const pCost = Math.max(0, parseFloat(dev.purchase_price || dev.cost || 0));
         const rCost = Math.max(0, parseFloat(dev.refurbishment_cost || 0));
         const aCost = Math.max(0, parseFloat(dev.additional_cost || 0));
@@ -409,7 +451,7 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
           rawImei1, rawImei2 || null, serial, conditionGrade, batteryHealth,
           pCost, rCost, aCost, totalCost,
           sellingPrice, disc, tRate, finalPrice,
-          dev.supplier_id || default_supplier_id || null,
+          targetSupplierId,
           dev.purchase_date || default_purchase_date || null,
           warranty,
           targetStoreId,
@@ -422,7 +464,8 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
           brand,
           model,
           imei1: rawImei1,
-          selling_price: sellingPrice
+          selling_price: sellingPrice,
+          supplier_id: targetSupplierId
         });
       });
     });

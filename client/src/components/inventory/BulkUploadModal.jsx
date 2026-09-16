@@ -72,6 +72,11 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
         normalized.tax_rate = parseFloat(val) || 18.0;
       } else if (cleanKey === 'storecode' || cleanKey === 'store' || cleanKey === 'branch' || cleanKey === 'storeid') {
         normalized.store_code = val;
+      } else if (cleanKey === 'supplier' || cleanKey === 'supplierinfo' || cleanKey === 'suppliername' || cleanKey === 'vendor' || cleanKey === 'vendorname') {
+        normalized.supplier_name = String(val).trim();
+        normalized.supplier_info = String(val).trim();
+      } else if (cleanKey === 'supplierid') {
+        normalized.supplier_id = val;
       } else if (cleanKey === 'warrantymonths' || cleanKey === 'warranty' || cleanKey === 'warrantyperiod') {
         normalized.warranty_period_months = parseInt(val) || 6;
       } else if (cleanKey === 'notes' || cleanKey === 'remark' || cleanKey === 'comments') {
@@ -195,6 +200,7 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
         'Selling Price': 62000,
         'Tax Rate': 18,
         'Store Code': stores[0]?.code || 'MUM-BKC',
+        'Supplier Info': suppliers[0]?.name || 'ReTech Global Wholesale',
         'Warranty Months': 6,
         'Notes': '64-point certified tested'
       },
@@ -216,6 +222,7 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
         'Selling Price': 58000,
         'Tax Rate': 18,
         'Store Code': stores[0]?.code || 'MUM-BKC',
+        'Supplier Info': suppliers[1]?.name || 'Apex Mobile Recyclers',
         'Warranty Months': 6,
         'Notes': 'Pristine display, S-Pen included'
       },
@@ -237,6 +244,7 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
         'Selling Price': 32000,
         'Tax Rate': 18,
         'Store Code': stores[0]?.code || 'MUM-BKC',
+        'Supplier Info': suppliers[2]?.name || 'Nordic Devices India',
         'Warranty Months': 6,
         'Notes': 'Minor bezel scratch'
       }
@@ -263,6 +271,7 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
       { wch: 14 }, // Selling Price
       { wch: 10 }, // Tax Rate
       { wch: 12 }, // Store Code
+      { wch: 24 }, // Supplier Info
       { wch: 15 }, // Warranty
       { wch: 25 }, // Notes
     ];
@@ -514,6 +523,7 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
                       <th className="py-2 px-3">Brand & Model</th>
                       <th className="py-2 px-3">IMEI 1</th>
                       <th className="py-2 px-3">Variant / Grade</th>
+                      <th className="py-2 px-3">Supplier Info</th>
                       <th className="py-2 px-3">Purchase Cost</th>
                       <th className="py-2 px-3">Selling Price</th>
                     </tr>
@@ -542,6 +552,17 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
                         </td>
                         <td className="py-2 px-3 text-slate-600">
                           {row.variant || 'Standard'} • <span className="font-semibold">{row.condition_grade || 'Grade A'}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          {row.supplier_name ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-semibold text-[10px]">
+                              {row.supplier_name}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[10px] italic">
+                              {suppliers.find(s => String(s.id) === String(targetSupplierId))?.name || 'Default Supplier'}
+                            </span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-slate-700">
                           {formatCurrency(row.purchase_price || 0)}
