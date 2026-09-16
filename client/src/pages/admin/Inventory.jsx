@@ -11,7 +11,9 @@ import {
   AlertCircle,
   Tag,
   RefreshCw,
-  X
+  X,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -64,6 +66,10 @@ export default function Inventory() {
     current_store_id: user?.assigned_store_id || 1,
     notes: '64-point certified tested'
   });
+
+  // Edit Phone Modal
+  const [editingPhone, setEditingPhone] = useState(null);
+  const [editFormData, setEditFormData] = useState(null);
 
   // Traceability Modal
   const [activeTraceIMEI, setActiveTraceIMEI] = useState(null);
@@ -128,8 +134,86 @@ export default function Inventory() {
     }
   };
 
+  const handleOpenEdit = (phone) => {
+    setEditingPhone(phone);
+    setEditFormData({
+      brand: phone.brand || '',
+      model: phone.model || '',
+      variant: phone.variant || '',
+      ram: phone.ram || '',
+      storage: phone.storage || '',
+      color: phone.color || '',
+      imei1: phone.imei1 || '',
+      imei2: phone.imei2 || '',
+      serial_number: phone.serial_number || '',
+      condition_grade: phone.condition_grade || 'Grade A',
+      battery_health: phone.battery_health || '90%',
+      purchase_price: phone.purchase_price || 0,
+      refurbishment_cost: phone.refurbishment_cost || 0,
+      additional_cost: phone.additional_cost || 0,
+      selling_price: phone.selling_price || 0,
+      discount: phone.discount || 0,
+      tax_rate: phone.tax_rate !== undefined ? phone.tax_rate : 18.0,
+      supplier_id: phone.supplier_id || '',
+      purchase_date: phone.purchase_date || new Date().toISOString().split('T')[0],
+      warranty_period_months: phone.warranty_period_months || 6,
+      current_store_id: phone.current_store_id || 1,
+      stock_status: phone.stock_status || 'AVAILABLE',
+      notes: phone.notes || ''
+    });
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingPhone) return;
+    try {
+      const res = await apiFetch(`/inventory/${editingPhone.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(editFormData)
+      });
+      if (res.success) {
+        setEditingPhone(null);
+        setEditFormData(null);
+        fetchInventory();
+        alert('Stock item updated successfully!');
+      } else {
+        alert(res.message || 'Failed to update stock item.');
+      }
+    } catch (err) {
+      alert(err.message || 'Error occurred while updating device.');
+    }
+  };
+
+  const handleDelete = async (phone) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to permanently delete this device from inventory?\n\n` +
+      `Device: ${phone.brand} ${phone.model}\n` +
+      `IMEI: ${phone.imei1}\n` +
+      `Current Status: ${phone.stock_status}\n\n` +
+      `This action cannot be undone.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const res = await apiFetch(`/inventory/${phone.id}`, {
+        method: 'DELETE'
+      });
+      if (res.success) {
+        alert(res.message || 'Device deleted successfully.');
+        fetchInventory();
+      } else {
+        alert(res.message || 'Failed to delete device.');
+      }
+    } catch (err) {
+      alert(err.message || 'Error occurred while deleting device.');
+    }
+  };
+
   // Auto-calculate Total Cost = Purchase + Refurb + Additional (Section 12)
   const calcTotalCost = (parseFloat(newPhone.purchase_price) || 0) + (parseFloat(newPhone.refurbishment_cost) || 0) + (parseFloat(newPhone.additional_cost) || 0);
+  const calcEditTotalCost = editFormData
+    ? (parseFloat(editFormData.purchase_price) || 0) + (parseFloat(editFormData.refurbishment_cost) || 0) + (parseFloat(editFormData.additional_cost) || 0)
+    : 0;
 
   return (
     <div className="space-y-5">
@@ -318,13 +402,29 @@ export default function Inventory() {
                       </td>
 
                       <td className="py-3 px-4 text-center">
-                        <button
-                          onClick={() => setActiveTraceIMEI(phone.imei1)}
-                          className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
-                          title="View Complete IMEI History"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => setActiveTraceIMEI(phone.imei1)}
+                            className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                            title="View Complete IMEI History"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenEdit(phone)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                            title="Edit Stock Data"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(phone)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                            title="Delete Stock Item"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -537,6 +637,240 @@ export default function Inventory() {
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg"
                 >
                   Save to Inventory
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Phone Modal */}
+      {editingPhone && editFormData && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
+                  <Pencil className="w-4 h-4 text-blue-400" />
+                  Edit Stock Item — {editingPhone.brand} {editingPhone.model}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  ID: {editingPhone.internal_product_id} • IMEI: {editingPhone.imei1}
+                </p>
+              </div>
+              <button onClick={() => { setEditingPhone(null); setEditFormData(null); }} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Brand *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.brand}
+                    onChange={(e) => setEditFormData({ ...editFormData, brand: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-medium"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="font-bold text-slate-600 block mb-1">Model Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.model}
+                    onChange={(e) => setEditFormData({ ...editFormData, model: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Variant</label>
+                  <input
+                    type="text"
+                    value={editFormData.variant}
+                    onChange={(e) => setEditFormData({ ...editFormData, variant: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Color</label>
+                  <input
+                    type="text"
+                    value={editFormData.color}
+                    onChange={(e) => setEditFormData({ ...editFormData, color: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Grade</label>
+                  <select
+                    value={editFormData.condition_grade}
+                    onChange={(e) => setEditFormData({ ...editFormData, condition_grade: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                  >
+                    <option value="Like New">Like New</option>
+                    <option value="Grade A">Grade A</option>
+                    <option value="Grade B">Grade B</option>
+                    <option value="Grade C">Grade C</option>
+                    <option value="Fair">Fair</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Battery Health</label>
+                  <input
+                    type="text"
+                    value={editFormData.battery_health}
+                    onChange={(e) => setEditFormData({ ...editFormData, battery_health: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                  />
+                </div>
+              </div>
+
+              {/* IMEIs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                <div>
+                  <label className="font-bold text-blue-900 block mb-1">Primary IMEI 1 (Unique) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="15-digit IMEI 1"
+                    value={editFormData.imei1}
+                    onChange={(e) => setEditFormData({ ...editFormData, imei1: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-blue-300 rounded-lg font-mono font-bold text-blue-900"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Secondary IMEI 2 (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="15-digit IMEI 2"
+                    value={editFormData.imei2}
+                    onChange={(e) => setEditFormData({ ...editFormData, imei2: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Stock Status & Store */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Stock Status *</label>
+                  <select
+                    value={editFormData.stock_status}
+                    onChange={(e) => setEditFormData({ ...editFormData, stock_status: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-bold text-slate-800"
+                  >
+                    <option value="AVAILABLE">AVAILABLE (In Store Stock)</option>
+                    <option value="SOLD">SOLD</option>
+                    <option value="IN_TRANSIT">IN_TRANSIT (Transferring)</option>
+                    <option value="DEFECTIVE">DEFECTIVE (Service / RTV)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Assigned Store Outlet *</label>
+                  <select
+                    value={editFormData.current_store_id}
+                    onChange={(e) => setEditFormData({ ...editFormData, current_store_id: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                  >
+                    {meta.stores.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Financial Cost Calculation */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <span className="font-bold text-slate-700 block uppercase text-[10px]">Cost Structure</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-slate-500 block mb-0.5">Purchase Cost (₹)</label>
+                    <input
+                      type="number"
+                      value={editFormData.purchase_price}
+                      onChange={(e) => setEditFormData({ ...editFormData, purchase_price: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-white border rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-500 block mb-0.5">Refurb Cost (₹)</label>
+                    <input
+                      type="number"
+                      value={editFormData.refurbishment_cost}
+                      onChange={(e) => setEditFormData({ ...editFormData, refurbishment_cost: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-white border rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-500 block mb-0.5">Other Costs (₹)</label>
+                    <input
+                      type="number"
+                      value={editFormData.additional_cost}
+                      onChange={(e) => setEditFormData({ ...editFormData, additional_cost: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-white border rounded"
+                    />
+                  </div>
+                </div>
+                <div className="text-right pt-1 font-bold text-blue-800">
+                  Total Calculated Cost: {formatCurrency(calcEditTotalCost)}
+                </div>
+              </div>
+
+              {/* Selling Price & Warranty */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Selling Price (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    value={editFormData.selling_price}
+                    onChange={(e) => setEditFormData({ ...editFormData, selling_price: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-bold text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Warranty Period (Months)</label>
+                  <input
+                    type="number"
+                    value={editFormData.warranty_period_months}
+                    onChange={(e) => setEditFormData({ ...editFormData, warranty_period_months: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Technical & Cosmetic Notes</label>
+                <textarea
+                  rows="2"
+                  value={editFormData.notes}
+                  onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
+                  placeholder="Notes, condition remarks, replaced components..."
+                  className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                />
+              </div>
+
+              <div className="pt-3 border-t flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setEditingPhone(null); setEditFormData(null); }}
+                  className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-xs"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Save Changes
                 </button>
               </div>
             </form>

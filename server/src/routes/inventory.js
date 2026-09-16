@@ -281,4 +281,145 @@ router.get('/meta/catalog', authenticateToken, (req, res) => {
   res.json({ success: true, brands, models, grades, suppliers, stores });
 });
 
+// PUT /api/inventory/:id (Update Phone Details)
+router.put('/:id', authenticateToken, (req, res) => {
+  const phoneId = parseInt(req.params.id);
+  const existing = db.prepare(`SELECT * FROM phone_inventory WHERE id = ?`).get(phoneId);
+  if (!existing) {
+    return res.status(404).json({ success: false, message: 'Device not found.' });
+  }
+
+  // Employee restricted to their store
+  if (req.user.role !== 'admin' && existing.current_store_id !== req.user.assigned_store_id) {
+    return res.status(403).json({ success: false, message: 'Access denied to update inventory in other stores.' });
+  }
+
+  const {
+    brand, model, variant, ram, storage, color,
+    imei1, imei2, serial_number, condition_grade, battery_health,
+    purchase_price, refurbishment_cost, additional_cost,
+    selling_price, discount, tax_rate,
+    supplier_id, purchase_date, warranty_period_months,
+    current_store_id, stock_status, notes
+  } = req.body;
+
+  if (!brand || !model || !imei1 || selling_price === undefined) {
+    return res.status(400).json({ success: false, message: 'Brand, model, IMEI 1, and selling price are required.' });
+  }
+
+  // Check IMEI Uniqueness excluding this phone
+  const dupImei1 = db.prepare(`
+    SELECT id, imei1, stock_status FROM phone_inventory 
+    WHERE (imei1 = ? OR (imei2 IS NOT NULL AND imei2 = ?)) AND id != ?
+  `).get(imei1.trim(), imei1.trim(), phoneId);
+
+  if (dupImei1) {
+    return res.status(400).json({ success: false, message: `IMEI ${imei1} is already registered on another device (ID #${dupImei1.id}, Status: ${dupImei1.stock_status}).` });
+  }
+
+  if (imei2 && imei2.trim()) {
+    const dupImei2 = db.prepare(`
+      SELECT id, imei1 FROM phone_inventory 
+      WHERE (imei1 = ? OR imei2 = ?) AND id != ?
+    `).get(imei2.trim(), imei2.trim(), phoneId);
+    if (dupImei2) {
+      return res.status(400).json({ success: false, message: `Secondary IMEI ${imei2} is already registered on another device.` });
+    }
+  }
+
+  const pCost = parseFloat(purchase_price !== undefined ? purchase_price : existing.purchase_price);
+  const rCost = parseFloat(refurbishment_cost !== undefined ? refurbishment_cost : existing.refurbishment_cost);
+  const aCost = parseFloat(additional_cost !== undefined ? additional_cost : existing.additional_cost);
+  const totalCost = pCost + rCost + aCost;
+
+  const sPrice = parseFloat(selling_price !== undefined ? selling_price : existing.selling_price);
+  const disc = parseFloat(discount !== undefined ? discount : existing.discount);
+  const defaultTaxRow = db.prepare(`SELECT value FROM settings WHERE key = 'default_tax_rate'`).get();
+  const fallbackTaxRate = defaultTaxRow && !isNaN(parseFloat(defaultTaxRow.value)) ? parseFloat(defaultTaxRow.value) : 18.0;
+  const tRate = (tax_rate !== undefined && tax_rate !== null && !isNaN(parseFloat(tax_rate))) ? parseFloat(tax_rate) : fallbackTaxRate;
+  const taxable = Math.max(0, sPrice - disc);
+  const finalPrice = taxable + (taxable * (tRate / 100));
+
+  const targetStoreId = (req.user.role === 'admin' && current_store_id) ? parseInt(current_store_id) : (existing.current_store_id || req.user.assigned_store_id);
+  const updatedStatus = stock_status || existing.stock_status || 'AVAILABLE';
+
+  try {
+    db.prepare(`
+      UPDATE phone_inventory SET
+        brand = ?, model = ?, variant = ?, ram = ?, storage = ?, color = ?,
+        imei1 = ?, imei2 = ?, serial_number = ?, condition_grade = ?, battery_health = ?,
+        purchase_price = ?, refurbishment_cost = ?, additional_cost = ?, total_cost = ?,
+        selling_price = ?, discount = ?, tax_rate = ?, final_selling_price = ?,
+        supplier_id = ?, purchase_date = ?, warranty_period_months = ?,
+        current_store_id = ?, stock_status = ?, notes = ?
+      WHERE id = ?
+    `).run(
+      brand.trim(), model.trim(), variant || '', ram || '', storage || '', color || '',
+      imei1.trim(), imei2 ? imei2.trim() : null, serial_number || '', condition_grade || 'Grade A', battery_health || '90%',
+      pCost, rCost, aCost, totalCost,
+      sPrice, disc, tRate, finalPrice,
+      supplier_id ? parseInt(supplier_id) : null, purchase_date || null, parseInt(warranty_period_months || 6),
+      targetStoreId, updatedStatus, notes || '',
+      phoneId
+    );
+
+    logAudit(req.user.id, req.user.username, 'UPDATE_INVENTORY', targetStoreId, 'PHONE', phoneId, { imei: imei1, brand, model, totalCost, selling_price: sPrice, stock_status: updatedStatus }, req);
+
+    res.json({ success: true, message: 'Stock data updated successfully.' });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/inventory/:id (Delete stock item)
+router.delete('/:id', authenticateToken, (req, res) => {
+  const phoneId = parseInt(req.params.id);
+  const phone = db.prepare(`SELECT * FROM phone_inventory WHERE id = ?`).get(phoneId);
+  if (!phone) {
+    return res.status(404).json({ success: false, message: 'Device not found.' });
+  }
+
+  // Employee restricted to their store
+  if (req.user.role !== 'admin' && phone.current_store_id !== req.user.assigned_store_id) {
+    return res.status(403).json({ success: false, message: 'Access denied to delete inventory in other stores.' });
+  }
+
+  // Rule: Cannot delete phone if linked to a completed sale/invoice
+  const saleItem = db.prepare(`SELECT sale_id FROM sale_items WHERE phone_id = ? LIMIT 1`).get(phoneId);
+  if (saleItem) {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot delete device because it is linked to an existing Tax Invoice (Sale #${saleItem.sale_id}). You can change its status or void the invoice instead.`
+    });
+  }
+
+  // Rule: Check if linked to active transfer
+  const activeTransfer = db.prepare(`
+    SELECT t.status FROM stock_transfer_items ti
+    JOIN stock_transfers t ON ti.transfer_id = t.id
+    WHERE ti.phone_id = ? AND t.status = 'PENDING'
+    LIMIT 1
+  `).get(phoneId);
+
+  if (activeTransfer) {
+    return res.status(400).json({
+      success: false,
+      message: 'Cannot delete device while it has a pending stock transfer. Please complete or cancel the transfer first.'
+    });
+  }
+
+  try {
+    db.prepare(`DELETE FROM warranties WHERE phone_id = ?`).run(phoneId);
+    db.prepare(`DELETE FROM stock_transfer_items WHERE phone_id = ?`).run(phoneId);
+    db.prepare(`DELETE FROM return_items WHERE phone_id = ?`).run(phoneId);
+    db.prepare(`DELETE FROM phone_inventory WHERE id = ?`).run(phoneId);
+
+    logAudit(req.user.id, req.user.username, 'DELETE_INVENTORY', phone.current_store_id, 'PHONE', phoneId, { imei: phone.imei1, brand: phone.brand, model: phone.model }, req);
+
+    res.json({ success: true, message: `Device ${phone.brand} ${phone.model} (IMEI: ${phone.imei1}) deleted successfully.` });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;
