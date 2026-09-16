@@ -68,7 +68,7 @@ router.get('/:id', authenticateToken, (req, res) => {
 
 // POST /api/employees (Admin only)
 router.post('/', authenticateToken, requireAdmin, (req, res) => {
-  const { employee_id, username, password, full_name, phone, email, address, role, assigned_store_id } = req.body;
+  const { employee_id, username, password, full_name, phone, email, address, role, assigned_store_id, status } = req.body;
 
   if (!username || !password || !full_name) {
     return res.status(400).json({ success: false, message: 'Username, password, and full name are required.' });
@@ -79,13 +79,14 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
     const hash = bcrypt.hashSync(password, salt);
 
     const generatedId = employee_id || `ECO-EMP-${Math.floor(100 + Math.random() * 900)}`;
+    const initialStatus = ['active', 'inactive', 'disabled', 'suspended'].includes(status) ? status : 'active';
 
     const info = db.prepare(`
       INSERT INTO users (employee_id, username, password_hash, full_name, phone, email, address, role, assigned_store_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
-    `).run(generatedId, username.trim(), hash, full_name.trim(), phone || '', email || '', address || '', role || 'employee', assigned_store_id || null);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(generatedId, username.trim(), hash, full_name.trim(), phone || '', email || '', address || '', role || 'employee', assigned_store_id || null, initialStatus);
 
-    logAudit(req.user.id, req.user.username, 'CREATE_EMPLOYEE', assigned_store_id, 'USER', info.lastInsertRowid, { username, role }, req);
+    logAudit(req.user.id, req.user.username, 'CREATE_EMPLOYEE', assigned_store_id, 'USER', info.lastInsertRowid, { username, role, status: initialStatus }, req);
 
     res.status(201).json({ success: true, message: 'Employee created successfully.', id: info.lastInsertRowid });
   } catch (err) {
@@ -136,14 +137,19 @@ router.patch('/:id/status', authenticateToken, requireAdmin, (req, res) => {
   const id = parseInt(req.params.id);
   const { status } = req.body;
 
-  if (!['active', 'inactive', 'suspended'].includes(status)) {
+  if (!['active', 'inactive', 'suspended', 'disabled'].includes(status)) {
     return res.status(400).json({ success: false, message: 'Invalid status.' });
+  }
+
+  // Prevent admin from disabling their own account
+  if (req.user.id === id && (status === 'inactive' || status === 'disabled' || status === 'suspended')) {
+    return res.status(400).json({ success: false, message: 'You cannot disable your own administrator account.' });
   }
 
   db.prepare(`UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(status, id);
   logAudit(req.user.id, req.user.username, 'TOGGLE_EMPLOYEE_STATUS', null, 'USER', id, { status }, req);
 
-  res.json({ success: true, message: `Account marked as ${status}.` });
+  res.json({ success: true, message: `Account status updated to ${status}.` });
 });
 
 module.exports = router;
