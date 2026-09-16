@@ -13,12 +13,14 @@ import {
   RefreshCw,
   X,
   Pencil,
-  Trash2
+  Trash2,
+  FileSpreadsheet
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate, getStatusBadge } from '../../utils/formatters';
 import IMEILifecycleModal from '../../components/ui/IMEILifecycleModal';
+import BulkUploadModal from '../../components/inventory/BulkUploadModal';
 
 export default function Inventory() {
   const { user, isAdmin } = useAuth();
@@ -39,6 +41,9 @@ export default function Inventory() {
 
   // Catalog meta
   const [meta, setMeta] = useState({ brands: [], models: [], grades: [], suppliers: [], stores: [] });
+
+  // Bulk Excel Upload Modal
+  const [showBulkModal, setShowBulkModal] = useState(false);
 
   // Add Phone Modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -231,6 +236,14 @@ export default function Inventory() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBulkModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+            title="Upload Excel or CSV file to add multiple phones in bulk"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <span>Bulk Excel Upload</span>
+          </button>
           <button
             onClick={() => navigate(isAdmin ? '/admin/stock-entry' : '/employee/stock-entry')}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
@@ -877,6 +890,17 @@ export default function Inventory() {
           </div>
         </div>
       )}
+
+      {/* Bulk Excel Upload Modal */}
+      <BulkUploadModal
+        isOpen={showBulkModal}
+        onClose={() => setShowBulkModal(false)}
+        stores={meta.stores}
+        suppliers={meta.suppliers}
+        onSuccess={() => {
+          fetchInventory();
+        }}
+      />
 
       {/* IMEI Traceability Modal */}
       {activeTraceIMEI && (

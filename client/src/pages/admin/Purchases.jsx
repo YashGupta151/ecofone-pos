@@ -14,11 +14,13 @@ import {
   X,
   Sparkles,
   Check,
-  AlertCircle
+  AlertCircle,
+  FileSpreadsheet
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import BulkUploadModal from '../../components/inventory/BulkUploadModal';
 
 export default function Purchases() {
   const { user, isAdmin } = useAuth();
@@ -29,6 +31,7 @@ export default function Purchases() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successModal, setSuccessModal] = useState(null);
+  const [showBulkModal, setShowBulkModal] = useState(false);
 
   // Form
   const [purchaseData, setPurchaseData] = useState({
@@ -248,6 +251,15 @@ export default function Purchases() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowBulkModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+            title="Upload Excel or CSV file to add multiple phones at once"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <span>Bulk Excel Upload</span>
+          </button>
           <button
             type="button"
             onClick={() => navigate(isAdmin ? '/admin/inventory' : '/employee/inventory')}
@@ -577,6 +589,17 @@ export default function Purchases() {
           </div>
         </div>
       )}
+
+      {/* Bulk Excel Upload Modal */}
+      <BulkUploadModal
+        isOpen={showBulkModal}
+        onClose={() => setShowBulkModal(false)}
+        stores={stores}
+        suppliers={suppliers}
+        onSuccess={() => {
+          navigate(isAdmin ? '/admin/inventory' : '/employee/inventory');
+        }}
+      />
     </div>
   );
 }

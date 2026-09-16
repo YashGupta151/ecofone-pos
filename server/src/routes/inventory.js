@@ -270,6 +270,195 @@ router.post('/', authenticateToken, (req, res) => {
   }
 });
 
+// POST /api/inventory/bulk-upload (Bulk Excel/CSV Upload)
+router.post('/bulk-upload', authenticateToken, (req, res) => {
+  const { devices, default_store_id, default_supplier_id, default_purchase_date } = req.body;
+
+  if (!Array.isArray(devices) || devices.length === 0) {
+    return res.status(400).json({ success: false, message: 'No device records provided in upload.' });
+  }
+
+  // Determine fallback store
+  const fallbackStoreId = (req.user.role === 'admin' && default_store_id)
+    ? parseInt(default_store_id)
+    : (req.user.assigned_store_id || 1);
+
+  // System Tax rate
+  const defaultTaxRow = db.prepare(`SELECT value FROM settings WHERE key = 'default_tax_rate'`).get();
+  const systemTaxRate = defaultTaxRow && !isNaN(parseFloat(defaultTaxRow.value)) ? parseFloat(defaultTaxRow.value) : 18.0;
+
+  // Stores cache for resolving store by name or code if specified in excel
+  const allStores = db.prepare(`SELECT id, code, name FROM stores`).all();
+  const storeMap = {};
+  allStores.forEach(s => {
+    storeMap[String(s.id)] = s.id;
+    storeMap[s.code.toUpperCase()] = s.id;
+    storeMap[s.name.toUpperCase()] = s.id;
+  });
+
+  // Fetch all existing IMEIs in memory set for ultra-fast lookup
+  const existingImeisRows = db.prepare(`SELECT imei1, imei2 FROM phone_inventory`).all();
+  const existingImeiSet = new Set();
+  existingImeisRows.forEach(row => {
+    if (row.imei1) existingImeiSet.add(row.imei1.trim().toUpperCase());
+    if (row.imei2) existingImeiSet.add(row.imei2.trim().toUpperCase());
+  });
+
+  const importedDevices = [];
+  const failedRows = [];
+  const seenInBatch = new Set();
+
+  let countRow = db.prepare(`SELECT COUNT(*) as cnt FROM phone_inventory`).get();
+  let nextSeq = (countRow ? countRow.cnt : 0) + 1;
+
+  const insertStmt = db.prepare(`
+    INSERT INTO phone_inventory (
+      internal_product_id, brand, model, variant, ram, storage, color,
+      imei1, imei2, serial_number, condition_grade, battery_health,
+      purchase_price, refurbishment_cost, additional_cost, total_cost,
+      selling_price, discount, tax_rate, final_selling_price,
+      supplier_id, purchase_date, warranty_period_months,
+      current_store_id, stock_status, date_added, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', DATE('now'), ?)
+  `);
+
+  try {
+    const executeBulk = db.transaction(() => {
+      devices.forEach((dev, idx) => {
+        const rowNum = idx + 1;
+        const brand = dev.brand ? String(dev.brand).trim() : '';
+        const model = dev.model ? String(dev.model).trim() : '';
+        const rawImei1 = dev.imei1 ? String(dev.imei1).replace(/\s/g, '').trim() : '';
+        const rawImei2 = dev.imei2 ? String(dev.imei2).replace(/\s/g, '').trim() : '';
+        const sellingPrice = parseFloat(dev.selling_price || dev.price);
+
+        if (!brand) {
+          failedRows.push({ row: rowNum, imei: rawImei1 || 'N/A', reason: 'Missing required Brand' });
+          return;
+        }
+        if (!model) {
+          failedRows.push({ row: rowNum, imei: rawImei1 || 'N/A', reason: 'Missing required Model' });
+          return;
+        }
+        if (!rawImei1 || rawImei1.length < 8) {
+          failedRows.push({ row: rowNum, imei: rawImei1 || 'N/A', reason: 'Invalid or missing IMEI 1 (min 8 digits)' });
+          return;
+        }
+        if (isNaN(sellingPrice) || sellingPrice <= 0) {
+          failedRows.push({ row: rowNum, imei: rawImei1, reason: 'Invalid or missing Selling Price' });
+          return;
+        }
+
+        const imei1Upper = rawImei1.toUpperCase();
+        if (seenInBatch.has(imei1Upper)) {
+          failedRows.push({ row: rowNum, imei: rawImei1, reason: 'Duplicate IMEI 1 in this uploaded file' });
+          return;
+        }
+        if (existingImeiSet.has(imei1Upper)) {
+          failedRows.push({ row: rowNum, imei: rawImei1, reason: `IMEI 1 already exists in inventory database` });
+          return;
+        }
+
+        if (rawImei2) {
+          const imei2Upper = rawImei2.toUpperCase();
+          if (seenInBatch.has(imei2Upper) || existingImeiSet.has(imei2Upper)) {
+            failedRows.push({ row: rowNum, imei: rawImei2, reason: `Secondary IMEI 2 (${rawImei2}) already exists` });
+            return;
+          }
+          seenInBatch.add(imei2Upper);
+        }
+
+        seenInBatch.add(imei1Upper);
+        existingImeiSet.add(imei1Upper);
+
+        // Resolve store
+        let targetStoreId = fallbackStoreId;
+        if (dev.store_id) {
+          targetStoreId = parseInt(dev.store_id);
+        } else if (dev.store_code && storeMap[String(dev.store_code).toUpperCase()]) {
+          targetStoreId = storeMap[String(dev.store_code).toUpperCase()];
+        } else if (dev.store_name && storeMap[String(dev.store_name).toUpperCase()]) {
+          targetStoreId = storeMap[String(dev.store_name).toUpperCase()];
+        }
+
+        const pCost = Math.max(0, parseFloat(dev.purchase_price || dev.cost || 0));
+        const rCost = Math.max(0, parseFloat(dev.refurbishment_cost || 0));
+        const aCost = Math.max(0, parseFloat(dev.additional_cost || 0));
+        const totalCost = pCost + rCost + aCost;
+
+        const disc = Math.max(0, parseFloat(dev.discount || 0));
+        const tRate = (dev.tax_rate !== undefined && dev.tax_rate !== null && !isNaN(parseFloat(dev.tax_rate)))
+          ? parseFloat(dev.tax_rate)
+          : systemTaxRate;
+        const taxable = Math.max(0, sellingPrice - disc);
+        const finalPrice = Math.round((taxable + (taxable * (tRate / 100))) * 100) / 100;
+
+        const internalId = `ECO-PH-${String(nextSeq++).padStart(5, '0')}`;
+        const conditionGrade = dev.condition_grade || dev.grade || 'Grade A';
+        const batteryHealth = dev.battery_health ? String(dev.battery_health).trim() : '90%';
+        const variant = dev.variant || dev.storage || '';
+        const ram = dev.ram || '';
+        const storage = dev.storage || dev.variant || '';
+        const color = dev.color || 'Standard';
+        const serial = dev.serial_number || dev.serial || '';
+        const warranty = parseInt(dev.warranty_period_months || dev.warranty || 6);
+        const notes = dev.notes || 'Bulk Excel Ingestion';
+
+        const info = insertStmt.run(
+          internalId, brand, model, variant, ram, storage, color,
+          rawImei1, rawImei2 || null, serial, conditionGrade, batteryHealth,
+          pCost, rCost, aCost, totalCost,
+          sellingPrice, disc, tRate, finalPrice,
+          dev.supplier_id || default_supplier_id || null,
+          dev.purchase_date || default_purchase_date || null,
+          warranty,
+          targetStoreId,
+          notes
+        );
+
+        importedDevices.push({
+          id: info.lastInsertRowid,
+          internal_product_id: internalId,
+          brand,
+          model,
+          imei1: rawImei1,
+          selling_price: sellingPrice
+        });
+      });
+    });
+
+    executeBulk();
+
+    if (importedDevices.length > 0) {
+      logAudit(
+        req.user.id,
+        req.user.username,
+        'BULK_STOCK_UPLOAD',
+        fallbackStoreId,
+        'INVENTORY',
+        importedDevices[0].id,
+        {
+          totalProcessed: devices.length,
+          importedCount: importedDevices.length,
+          failedCount: failedRows.length
+        },
+        req
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully imported ${importedDevices.length} device(s) into inventory!${failedRows.length > 0 ? ` (${failedRows.length} skipped due to duplicates or validation errors)` : ''}`,
+      importedCount: importedDevices.length,
+      failedCount: failedRows.length,
+      totalProcessed: devices.length,
+      failedRows
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
 // GET /api/inventory/meta (Brands, models, grades, suppliers)
 router.get('/meta/catalog', authenticateToken, (req, res) => {
   const brands = db.prepare(`SELECT * FROM brands ORDER BY name ASC`).all();
