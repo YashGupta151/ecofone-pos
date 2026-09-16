@@ -257,7 +257,7 @@ router.post('/', authenticateToken, (req, res) => {
     // 2. Validate all phones
     // Rule 1 & Rule 2: One IMEI cannot be sold twice; A SOLD phone cannot be sold again
     const defaultTaxSetting = db.prepare(`SELECT value FROM settings WHERE key = 'default_tax_rate'`).get();
-    const systemDefaultTaxRate = defaultTaxSetting && !isNaN(parseFloat(defaultTaxSetting.value)) ? parseFloat(defaultTaxSetting.value) : 18.0;
+    const systemDefaultTaxRate = defaultTaxSetting && !isNaN(parseFloat(defaultTaxSetting.value)) ? parseFloat(defaultTaxSetting.value) : 5.0;
 
     let subtotal = 0;
     let discountTotal = 0;
@@ -287,15 +287,24 @@ router.post('/', authenticateToken, (req, res) => {
 
       const sPrice = parseFloat(item.selling_price || phone.selling_price);
       const disc = parseFloat(item.discount || 0);
-      const taxable = sPrice - disc;
+      const netPrice = Math.max(0, sPrice - disc);
+      // Purchase price of device (fallback to total_cost if purchase_price <= 0)
+      const pPrice = parseFloat(phone.purchase_price !== undefined && phone.purchase_price !== null && parseFloat(phone.purchase_price) > 0
+        ? phone.purchase_price
+        : (phone.total_cost || 0));
+
+      // Margin Scheme Rule 32(5): Difference = Selling Price - Purchase Price
+      const difference = Math.max(0, netPrice - pPrice);
       const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
         ? parseFloat(item.tax_rate)
         : systemDefaultTaxRate;
 
-      // Tax Logic: If customer state != store state -> IGST, else CGST + SGST
+      // GST percentage is applied strictly on the Difference
+      const taxAmount = Math.round((difference * (tRate / 100)) * 100) / 100;
+
+      // Tax Split: If customer state != store state -> IGST, else CGST + SGST
       const isInterState = custRecord.state && store.state && custRecord.state.toLowerCase() !== store.state.toLowerCase();
       let cgst = 0, sgst = 0, igst = 0;
-      const taxAmount = Math.round((taxable * (tRate / 100)) * 100) / 100;
 
       if (isInterState) {
         igst = taxAmount;
@@ -304,11 +313,12 @@ router.post('/', authenticateToken, (req, res) => {
         sgst = Math.round((taxAmount - cgst) * 100) / 100;
       }
 
-      const finalPrice = taxable + taxAmount;
+      // GST on difference is added to the total amount of the bill
+      const finalPrice = netPrice + taxAmount;
 
       subtotal += sPrice;
       discountTotal += disc;
-      taxableAmountTotal += taxable;
+      taxableAmountTotal += difference;
       cgstTotal += cgst;
       sgstTotal += sgst;
       igstTotal += igst;
@@ -319,7 +329,8 @@ router.post('/', authenticateToken, (req, res) => {
         phone,
         selling_price: sPrice,
         discount: disc,
-        taxable_amount: taxable,
+        purchase_price: pPrice,
+        taxable_amount: difference,
         tax_rate: tRate,
         cgst,
         sgst,

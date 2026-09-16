@@ -19,7 +19,7 @@ function seedDatabase() {
     ['invoice_prefix', 'ECO', 'invoice'],
     ['invoice_footer', 'Thank you for choosing Ecofone! Certified Refurbished Premium Devices.', 'invoice'],
     ['invoice_terms', '1. 6 Months Ecofone Certified Warranty included.\n2. Warranty covers manufacturing and hardware defects.\n3. Physical and liquid damages are void from warranty.\n4. Original tax invoice is required for warranty and claims.', 'invoice'],
-    ['default_tax_rate', '18.0', 'tax']
+    ['default_tax_rate', '5.0', 'tax']
   ];
   for (const [k, v, g] of settings) {
     settingsStmt.run(k, v, g);
@@ -28,9 +28,9 @@ function seedDatabase() {
   // 2. Tax Rates
   db.exec(`DELETE FROM tax_rates`);
   const taxStmt = db.prepare(`INSERT INTO tax_rates (name, rate, cgst_rate, sgst_rate, igst_rate, is_default) VALUES (?, ?, ?, ?, ?, ?)`);
-  taxStmt.run('GST 18% (Standard Electronics)', 18.0, 9.0, 9.0, 18.0, 1);
+  taxStmt.run('GST 5% (Margin Scheme Rule 32(5))', 5.0, 2.5, 2.5, 5.0, 1);
   taxStmt.run('GST 12% (Refurbished Basic)', 12.0, 6.0, 6.0, 12.0, 0);
-  taxStmt.run('GST 28% (Luxury Tier)', 28.0, 14.0, 14.0, 28.0, 0);
+  taxStmt.run('GST 18% (Standard Electronics)', 18.0, 9.0, 9.0, 18.0, 0);
 
   // 3. Condition Grades
   db.exec(`DELETE FROM grades`);

@@ -139,7 +139,7 @@ function initSchema() {
       total_cost REAL NOT NULL DEFAULT 0,
       selling_price REAL NOT NULL DEFAULT 0,
       discount REAL DEFAULT 0,
-      tax_rate REAL DEFAULT 18.0,
+      tax_rate REAL DEFAULT 5.0,
       final_selling_price REAL NOT NULL DEFAULT 0,
       supplier_id INTEGER,
       purchase_id INTEGER,
@@ -521,7 +521,7 @@ try {
         ['invoice_prefix', 'ECO', 'invoice'],
         ['invoice_footer', 'Thank you for choosing Ecofone! Certified Refurbished Premium Devices.', 'invoice'],
         ['invoice_terms', '1. 6 Months Ecofone Certified Warranty included.\n2. Warranty covers manufacturing and hardware defects.\n3. Physical and liquid damages are void from warranty.\n4. Original tax invoice is required for warranty and claims.', 'invoice'],
-        ['default_tax_rate', '18.0', 'tax']
+        ['default_tax_rate', '5.0', 'tax']
       ];
       const insertStmt = db.prepare(`INSERT OR IGNORE INTO settings (key, value, group_name) VALUES (?, ?, ?)`);
       for (const [k, v, g] of defaultSettings) {

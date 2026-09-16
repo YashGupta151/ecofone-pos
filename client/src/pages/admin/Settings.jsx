@@ -199,6 +199,7 @@ export default function Settings() {
                 onChange={(e) => setSettings({ ...settings, default_tax_rate: e.target.value })}
                 className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-bold"
               />
+              <p className="text-[10px] text-slate-400 mt-1">Applied on Margin / Difference (Selling Price - Purchase Price)</p>
             </div>
           </div>
 

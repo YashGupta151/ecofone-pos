@@ -31,7 +31,7 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
         ? parseFloat(rawItemTax)
         : (companyTax !== undefined && companyTax !== null && !isNaN(parseFloat(companyTax))
             ? parseFloat(companyTax)
-            : 18));
+            : 5));
   const halfTaxRate = (totalTaxRate / 2).toFixed(1).replace(/\.0$/, '');
   const fullTaxRate = totalTaxRate.toString().replace(/\.0$/, '');
 
@@ -189,27 +189,31 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span>Taxable:</span>
+                    <span>Taxable Diff (Margin):</span>
                     <span>{formatCurrency(sale?.taxable_amount)}</span>
                   </div>
                   {sale?.cgst > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>CGST ({halfTaxRate}%):</span>
+                      <span>CGST ({halfTaxRate}% on Diff):</span>
                       <span>{formatCurrency(sale.cgst)}</span>
                     </div>
                   )}
                   {sale?.sgst > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>SGST ({halfTaxRate}%):</span>
+                      <span>SGST ({halfTaxRate}% on Diff):</span>
                       <span>{formatCurrency(sale.sgst)}</span>
                     </div>
                   )}
                   {sale?.igst > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>IGST ({fullTaxRate}%):</span>
+                      <span>IGST ({fullTaxRate}% on Diff):</span>
                       <span>{formatCurrency(sale.igst)}</span>
                     </div>
                   )}
+                  <div className="flex justify-between text-[9px] text-slate-700 font-semibold">
+                    <span>Total GST (5% on Diff):</span>
+                    <span>+{formatCurrency(sale?.total_tax)}</span>
+                  </div>
                   <div className="flex justify-between font-extrabold text-xs pt-1 border-t border-slate-400">
                     <span>{sale?.exchange_amount > 0 ? 'BILL TOTAL:' : 'TOTAL:'}</span>
                     <span>{formatCurrency(sale?.grand_total)}</span>
@@ -322,8 +326,8 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                         <th className="py-2 px-2 text-center w-20">Condition</th>
                         <th className="py-2 px-2 text-right w-20">Price</th>
                         <th className="py-2 px-2 text-right w-16">Disc.</th>
-                        <th className="py-2 px-2 text-right w-20">Taxable</th>
-                        <th className="py-2 px-2 text-right w-20">GST</th>
+                        <th className="py-2 px-2 text-right w-20">Margin (Diff)</th>
+                        <th className="py-2 px-2 text-right w-20">GST (5%)</th>
                         <th className="py-2 px-2 text-right w-24">Total</th>
                       </tr>
                     </thead>
@@ -369,8 +373,8 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                             {formatCurrency(item.taxable_amount)}
                           </td>
                           <td className="py-2.5 px-2 text-right text-slate-600">
-                            <div>{formatCurrency(item.total_tax)}</div>
-                            <div className="text-[9px] text-slate-400">({item.tax_rate}%)</div>
+                            <div className="font-semibold text-emerald-800">+{formatCurrency(item.total_tax)}</div>
+                            <div className="text-[9px] text-slate-400">({item.tax_rate}% on diff)</div>
                           </td>
                           <td className="py-2.5 px-2 text-right font-bold text-slate-900">
                             {formatCurrency(item.final_price)}
@@ -430,30 +434,30 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                       </div>
                     )}
                     <div className="flex justify-between text-slate-700 font-medium pt-1 border-t border-slate-200">
-                      <span>Taxable Value:</span>
-                      <span>{formatCurrency(sale?.taxable_amount)}</span>
+                      <span>Taxable Margin (Difference):</span>
+                      <span className="font-semibold">{formatCurrency(sale?.taxable_amount)}</span>
                     </div>
                     {sale?.cgst > 0 && (
                       <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>CGST ({halfTaxRate}%):</span>
+                        <span>CGST ({halfTaxRate}% on Margin):</span>
                         <span>{formatCurrency(sale.cgst)}</span>
                       </div>
                     )}
                     {sale?.sgst > 0 && (
                       <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>SGST ({halfTaxRate}%):</span>
+                        <span>SGST ({halfTaxRate}% on Margin):</span>
                         <span>{formatCurrency(sale.sgst)}</span>
                       </div>
                     )}
                     {sale?.igst > 0 && (
                       <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>IGST ({fullTaxRate}%):</span>
+                        <span>IGST ({fullTaxRate}% on Margin):</span>
                         <span>{formatCurrency(sale.igst)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-slate-700">
-                      <span>Total GST:</span>
-                      <span className="font-medium">{formatCurrency(sale?.total_tax)}</span>
+                      <span>Total GST (5% on Difference):</span>
+                      <span className="font-bold text-emerald-800">+{formatCurrency(sale?.total_tax)}</span>
                     </div>
                     <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-2 border-t-2 border-slate-900">
                       <span>Grand Total:</span>
@@ -493,7 +497,7 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
 
                 {/* Footer */}
                 <div className="mt-3 text-center text-[9px] text-slate-400 border-t border-slate-100 pt-2 print-avoid-break">
-                  {company.invoice_footer || 'Computer generated tax invoice under Section 31 of CGST Act, 2017. Thank you for choosing Ecofone! For warranty claims visit www.ecofone.in'}
+                  {company.invoice_footer || 'Computer generated tax invoice under Section 31 of CGST Act, 2017 & Rule 32(5) Margin Scheme (GST charged at 5% on difference between selling and purchase price). Thank you for choosing Ecofone! For warranty claims visit www.ecofone.in'}
                 </div>
 
               </div>

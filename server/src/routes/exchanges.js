@@ -240,11 +240,13 @@ router.post('/:id/move-to-inventory', authenticateToken, (req, res) => {
   }
 
   const defaultTax = db.prepare(`SELECT value FROM settings WHERE key = 'default_tax_rate'`).get();
-  const taxRate = defaultTax && !isNaN(parseFloat(defaultTax.value)) ? parseFloat(defaultTax.value) : 18.0;
+  const taxRate = defaultTax && !isNaN(parseFloat(defaultTax.value)) ? parseFloat(defaultTax.value) : 5.0;
 
   const purchasePrice = parseFloat(exchange.exchange_value) || 0;
   const suggestedSellingPrice = parseFloat(selling_price) || (purchasePrice > 0 ? Math.round(purchasePrice * 1.25) : 10000);
-  const finalPrice = Math.round((suggestedSellingPrice + (suggestedSellingPrice * (taxRate / 100))) * 100) / 100;
+  const difference = Math.max(0, suggestedSellingPrice - purchasePrice);
+  const taxAmount = Math.round((difference * (taxRate / 100)) * 100) / 100;
+  const finalPrice = suggestedSellingPrice + taxAmount;
 
   const internalProductId = `ECO-EXC-${Math.floor(10000 + Math.random() * 90000)}`;
 
