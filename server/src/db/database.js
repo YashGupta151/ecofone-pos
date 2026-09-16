@@ -218,6 +218,8 @@ function initSchema() {
       igst REAL DEFAULT 0,
       total_tax REAL NOT NULL DEFAULT 0,
       grand_total REAL NOT NULL DEFAULT 0,
+      exchange_amount REAL DEFAULT 0,
+      net_payable REAL DEFAULT 0,
       payment_status TEXT DEFAULT 'PAID',
       status TEXT DEFAULT 'COMPLETED' CHECK(status IN ('COMPLETED', 'VOID', 'RETURNED')),
       notes TEXT,
@@ -422,10 +424,62 @@ function initSchema() {
       link TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Exchanged Phones Table
+    CREATE TABLE IF NOT EXISTS exchanged_phones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exchange_number TEXT UNIQUE NOT NULL,
+      sale_id INTEGER,
+      invoice_number TEXT,
+      store_id INTEGER NOT NULL,
+      employee_id INTEGER NOT NULL,
+      customer_id INTEGER NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_phone TEXT NOT NULL,
+      customer_email TEXT,
+      customer_address TEXT,
+      customer_id_proof_type TEXT,
+      customer_id_proof_number TEXT,
+      brand TEXT NOT NULL,
+      model TEXT NOT NULL,
+      variant TEXT,
+      color TEXT,
+      imei1 TEXT NOT NULL,
+      imei2 TEXT,
+      serial_number TEXT,
+      condition_grade TEXT DEFAULT 'Grade B',
+      battery_health TEXT,
+      device_condition TEXT,
+      functional_issues TEXT,
+      accessories_included TEXT,
+      exchange_value REAL NOT NULL DEFAULT 0,
+      status TEXT DEFAULT 'IN_STOCK' CHECK(status IN ('IN_STOCK', 'REFURBISHING', 'ADDED_TO_INVENTORY', 'SCRAPPED', 'SOLD')),
+      phone_inventory_id INTEGER,
+      exchange_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL,
+      FOREIGN KEY (store_id) REFERENCES stores(id),
+      FOREIGN KEY (employee_id) REFERENCES users(id),
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_exchanged_phones_imei1 ON exchanged_phones(imei1);
+    CREATE INDEX IF NOT EXISTS idx_exchanged_phones_store ON exchanged_phones(store_id);
+    CREATE INDEX IF NOT EXISTS idx_exchanged_phones_sale ON exchanged_phones(sale_id);
   `);
 }
 
 initSchema();
+
+// Safe migrations for existing SQLite databases
+try {
+  db.exec(`ALTER TABLE sales ADD COLUMN exchange_amount REAL DEFAULT 0;`);
+} catch (e) {}
+try {
+  db.exec(`ALTER TABLE sales ADD COLUMN net_payable REAL DEFAULT 0;`);
+} catch (e) {}
 
 // Auto-seed or restore settings if settings table is empty
 try {

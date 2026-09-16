@@ -22,6 +22,7 @@ import ProfitLoss from './pages/admin/ProfitLoss';
 import Reports from './pages/admin/Reports';
 import AuditLogs from './pages/admin/AuditLogs';
 import Settings from './pages/admin/Settings';
+import ExchangedPhones from './pages/admin/ExchangedPhones';
 
 // Employee Pages
 import EmployeeDashboard from './pages/employee/Dashboard';
@@ -76,6 +77,7 @@ export default function App() {
             <Route path="admin/stock-entry" element={<ProtectedRoute requireAdmin><Purchases /></ProtectedRoute>} />
             <Route path="admin/transfers" element={<ProtectedRoute requireAdmin><Transfers /></ProtectedRoute>} />
             <Route path="admin/pos" element={<ProtectedRoute requireAdmin><POS /></ProtectedRoute>} />
+            <Route path="admin/exchanged-phones" element={<ProtectedRoute requireAdmin><ExchangedPhones /></ProtectedRoute>} />
             <Route path="admin/customers" element={<ProtectedRoute requireAdmin><Customers /></ProtectedRoute>} />
             <Route path="admin/invoices" element={<ProtectedRoute requireAdmin><Invoices /></ProtectedRoute>} />
             <Route path="admin/returns" element={<ProtectedRoute requireAdmin><Returns /></ProtectedRoute>} />
@@ -89,6 +91,7 @@ export default function App() {
             {/* Employee Routes */}
             <Route path="employee/dashboard" element={<ProtectedRoute><EmployeeDashboard /></ProtectedRoute>} />
             <Route path="employee/pos" element={<ProtectedRoute><POS /></ProtectedRoute>} />
+            <Route path="employee/exchanged-phones" element={<ProtectedRoute><ExchangedPhones /></ProtectedRoute>} />
             <Route path="employee/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
             <Route path="employee/stock-entry" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
             <Route path="employee/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />

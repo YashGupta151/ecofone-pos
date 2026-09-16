@@ -16,6 +16,7 @@ const expenseRoutes = require('./routes/expenses');
 const reportRoutes = require('./routes/reports');
 const dashboardRoutes = require('./routes/dashboard');
 const settingsRoutes = require('./routes/settings');
+const exchangeRoutes = require('./routes/exchanges');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -54,6 +55,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/exchanges', exchangeRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

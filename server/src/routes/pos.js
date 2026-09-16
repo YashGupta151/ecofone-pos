@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { authenticateToken, requireAdmin, logAudit } = require('../middleware/auth');
+const exchangeRouter = require('./exchanges');
+const getNextExchangeNumber = exchangeRouter.getNextExchangeNumber;
 
 // Helper to generate next unique sequential invoice number (Rule 5)
 function getNextInvoiceNumber() {
@@ -157,18 +159,23 @@ router.get('/:id', authenticateToken, (req, res) => {
   const settingsObj = {};
   companySettings.forEach(s => settingsObj[s.key] = s.value);
 
+  const exchange = db.prepare(`
+    SELECT * FROM exchanged_phones WHERE sale_id = ?
+  `).get(saleId);
+
   res.json({
     success: true,
     sale,
     items,
     payments,
+    exchange: exchange || null,
     company: settingsObj
   });
 });
 
 // POST /api/sales (COMPLETE SALE / POS BILLING)
 router.post('/', authenticateToken, (req, res) => {
-  const { customer, items, payment_method, reference_number, notes } = req.body;
+  const { customer, items, payment_method, reference_number, notes, exchange_device } = req.body;
 
   if (!customer || !items || !items.length || !payment_method) {
     return res.status(400).json({ success: false, message: 'Customer details, products, and payment method are required.' });
@@ -209,11 +216,26 @@ router.post('/', authenticateToken, (req, res) => {
           customer.state || store.state,
           customer.pincode || '',
           customer.gstin || null,
-          customer.id_proof_type || null,
-          customer.id_proof_number || null
+          customer.id_proof_type || exchange_device?.customer_id_proof_type || null,
+          customer.id_proof_number || exchange_device?.customer_id_proof_number || null
         );
         customerId = cRes.lastInsertRowid;
       }
+    }
+
+    // Update customer KYC / ID proof if supplied with exchange
+    if (customer.id_proof_type || customer.id_proof_number || exchange_device?.customer_id_proof_type || exchange_device?.customer_id_proof_number) {
+      db.prepare(`
+        UPDATE customers
+        SET id_proof_type = COALESCE(?, id_proof_type),
+            id_proof_number = COALESCE(?, id_proof_number),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(
+        exchange_device?.customer_id_proof_type || customer.id_proof_type || null,
+        exchange_device?.customer_id_proof_number || customer.id_proof_number || null,
+        customerId
+      );
     }
 
     const custRecord = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(customerId);
@@ -293,25 +315,99 @@ router.post('/', authenticateToken, (req, res) => {
       });
     }
 
-    // 3. Generate Sequential Numbers
+    // 3. Handle Exchange Device if provided
+    let exchangeAmount = 0;
+    let exchangeNumber = null;
+    let exchangeRecord = null;
+
+    if (exchange_device && exchange_device.brand && exchange_device.model && exchange_device.imei1) {
+      exchangeAmount = Math.max(0, parseFloat(exchange_device.exchange_value) || 0);
+
+      const imeiClean = exchange_device.imei1.trim();
+      const existingInStock = db.prepare(`SELECT id, stock_status FROM phone_inventory WHERE imei1 = ? AND stock_status = 'AVAILABLE'`).get(imeiClean);
+      if (existingInStock) {
+        throw new Error(`Device with IMEI ${imeiClean} is already registered in active store inventory.`);
+      }
+
+      exchangeNumber = getNextExchangeNumber();
+    }
+
+    const netPayable = Math.max(0, grandTotalAll - exchangeAmount);
+
+    // 4. Generate Sequential Numbers
     const invoiceNumber = getNextInvoiceNumber();
     const saleNumber = getNextSaleNumber();
 
-    // 4. Insert into Sales
+    // 5. Insert into Sales
     const saleInsert = db.prepare(`
       INSERT INTO sales (
         sale_number, invoice_number, sale_date, store_id, employee_id, customer_id,
         subtotal, discount_total, taxable_amount, cgst, sgst, igst, total_tax, grand_total,
+        exchange_amount, net_payable,
         payment_status, status, notes
-      ) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PAID', 'COMPLETED', ?)
+      ) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PAID', 'COMPLETED', ?)
     `).run(
       saleNumber, invoiceNumber, storeId, req.user.id, customerId,
       subtotal, discountTotal, taxableAmountTotal, cgstTotal, sgstTotal, igstTotal, totalTaxAll, grandTotalAll,
+      exchangeAmount, netPayable,
       notes || ''
     );
     const saleId = saleInsert.lastInsertRowid;
 
-    // 5. Insert Sale Items and Update Inventory (Rule 3: stock_status -> SOLD)
+    // Insert Exchanged Phone record if exchange occurred
+    if (exchangeNumber) {
+      const accessoriesStr = Array.isArray(exchange_device.accessories_included)
+        ? exchange_device.accessories_included.join(', ')
+        : (exchange_device.accessories_included || '');
+
+      const exInsert = db.prepare(`
+        INSERT INTO exchanged_phones (
+          exchange_number, sale_id, invoice_number, store_id, employee_id, customer_id,
+          customer_name, customer_phone, customer_email, customer_address,
+          customer_id_proof_type, customer_id_proof_number,
+          brand, model, variant, color, imei1, imei2, serial_number,
+          condition_grade, battery_health, device_condition, functional_issues, accessories_included,
+          exchange_value, status, notes
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?,
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, 'IN_STOCK', ?
+        )
+      `).run(
+        exchangeNumber,
+        saleId,
+        invoiceNumber,
+        storeId,
+        req.user.id,
+        customerId,
+        custRecord.full_name || customer.full_name,
+        custRecord.phone || customer.phone,
+        custRecord.email || customer.email || '',
+        custRecord.address || customer.address || '',
+        exchange_device.customer_id_proof_type || custRecord.id_proof_type || customer.id_proof_type || null,
+        exchange_device.customer_id_proof_number || custRecord.id_proof_number || customer.id_proof_number || null,
+        exchange_device.brand.trim(),
+        exchange_device.model.trim(),
+        exchange_device.variant ? exchange_device.variant.trim() : '',
+        exchange_device.color ? exchange_device.color.trim() : '',
+        exchange_device.imei1.trim(),
+        exchange_device.imei2 ? exchange_device.imei2.trim() : null,
+        exchange_device.serial_number ? exchange_device.serial_number.trim() : null,
+        exchange_device.condition_grade || 'Grade B',
+        exchange_device.battery_health ? String(exchange_device.battery_health).trim() : null,
+        exchange_device.device_condition || '',
+        exchange_device.functional_issues || '',
+        accessoriesStr,
+        exchangeAmount,
+        exchange_device.notes || `Exchanged against Bill #${invoiceNumber}`
+      );
+      exchangeRecord = { id: exInsert.lastInsertRowid, exchange_number: exchangeNumber, exchange_value: exchangeAmount };
+    }
+
+    // 6. Insert Sale Items and Update Inventory (Rule 3: stock_status -> SOLD)
     const saleItemInsert = db.prepare(`
       INSERT INTO sale_items (
         sale_id, phone_id, imei1, brand, model, variant, condition_grade,
@@ -370,13 +466,13 @@ router.post('/', authenticateToken, (req, res) => {
       );
     }
 
-    // 6. Record Payment
+    // 7. Record Payment
     db.prepare(`
       INSERT INTO payments (sale_id, payment_method, amount, reference_number, payment_date)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(saleId, payment_method, grandTotalAll, reference_number || null);
+    `).run(saleId, payment_method, netPayable, reference_number || null);
 
-    // 7. Update Customer Total Spent
+    // 8. Update Customer Total Spent
     db.prepare(`
       UPDATE customers
       SET total_purchases = total_purchases + ?,
@@ -385,7 +481,7 @@ router.post('/', authenticateToken, (req, res) => {
       WHERE id = ?
     `).run(validatedItems.length, grandTotalAll, customerId);
 
-    // 8. Audit Log
+    // 9. Audit Log
     logAudit(
       req.user.id,
       req.user.username,
@@ -393,7 +489,7 @@ router.post('/', authenticateToken, (req, res) => {
       storeId,
       'SALE',
       saleId,
-      { invoiceNumber, itemsCount: validatedItems.length, grandTotal: grandTotalAll, payment_method },
+      { invoiceNumber, itemsCount: validatedItems.length, grandTotal: grandTotalAll, exchangeAmount, netPayable, payment_method, exchangeNumber },
       req
     );
 
@@ -401,7 +497,10 @@ router.post('/', authenticateToken, (req, res) => {
       saleId,
       invoiceNumber,
       saleNumber,
-      grandTotal: grandTotalAll
+      grandTotal: grandTotalAll,
+      exchangeAmount,
+      netPayable,
+      exchange: exchangeRecord
     };
   });
 

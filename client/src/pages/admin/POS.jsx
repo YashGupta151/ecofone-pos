@@ -12,7 +12,10 @@ import {
   Plus, 
   AlertCircle,
   Building2,
-  Receipt
+  Receipt,
+  ArrowLeftRight,
+  RefreshCw,
+  Check
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -47,7 +50,30 @@ export default function POS() {
     city: '',
     state: '',
     pincode: '',
-    gstin: ''
+    gstin: '',
+    id_proof_type: 'Aadhaar',
+    id_proof_number: ''
+  });
+
+  // Exchange / Trade-In State
+  const [hasExchange, setHasExchange] = useState(false);
+  const [exchangeDevice, setExchangeDevice] = useState({
+    brand: 'Apple',
+    model: '',
+    variant: '',
+    color: '',
+    imei1: '',
+    imei2: '',
+    serial_number: '',
+    condition_grade: 'Grade B',
+    battery_health: '',
+    device_condition: '',
+    functional_issues: '',
+    accessories_included: ['Box'],
+    exchange_value: '',
+    customer_id_proof_type: 'Aadhaar',
+    customer_id_proof_number: '',
+    notes: ''
   });
 
   // Payment
@@ -241,6 +267,10 @@ export default function POS() {
   const totalTax = Math.round((taxableAmount * (systemTaxRate / 100)) * 100) / 100;
   const grandTotal = taxableAmount + totalTax;
 
+  // Exchange Valuation & Net Amount Payable
+  const exchangeValueNum = hasExchange ? Math.max(0, parseFloat(exchangeDevice.exchange_value) || 0) : 0;
+  const netPayable = Math.max(0, grandTotal - exchangeValueNum);
+
   // Complete Sale Execution
   const handleCompleteSale = async () => {
     setError('');
@@ -255,12 +285,31 @@ export default function POS() {
       return;
     }
 
+    if (hasExchange) {
+      if (!exchangeDevice.brand.trim() || !exchangeDevice.model.trim()) {
+        setError('Please provide the Brand and Model of the exchanged device.');
+        return;
+      }
+      if (!exchangeDevice.imei1.trim() || exchangeDevice.imei1.trim().length < 8) {
+        setError('Please provide a valid Primary IMEI (min 8 characters) for the exchanged device.');
+        return;
+      }
+      if (exchangeValueNum <= 0) {
+        setError('Please enter an Agreed Exchange Value (valuation) greater than 0.');
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
       const payload = {
         store_id: selectedStoreId,
-        customer,
+        customer: {
+          ...customer,
+          id_proof_type: exchangeDevice.customer_id_proof_type || customer.id_proof_type,
+          id_proof_number: exchangeDevice.customer_id_proof_number || customer.id_proof_number
+        },
         items: cart.map(item => ({
           phone_id: item.id,
           selling_price: item.selling_price,
@@ -269,6 +318,10 @@ export default function POS() {
             ? parseFloat(item.tax_rate)
             : systemTaxRate
         })),
+        exchange_device: hasExchange ? {
+          ...exchangeDevice,
+          exchange_value: exchangeValueNum
+        } : null,
         payment_method: paymentMethod,
         reference_number: referenceNumber,
         notes: saleNotes
@@ -287,6 +340,25 @@ export default function POS() {
         }
         // Reset Cart and refresh inventory
         setCart([]);
+        setHasExchange(false);
+        setExchangeDevice({
+          brand: 'Apple',
+          model: '',
+          variant: '',
+          color: '',
+          imei1: '',
+          imei2: '',
+          serial_number: '',
+          condition_grade: 'Grade B',
+          battery_health: '',
+          device_condition: '',
+          functional_issues: '',
+          accessories_included: ['Box'],
+          exchange_value: '',
+          customer_id_proof_type: 'Aadhaar',
+          customer_id_proof_number: '',
+          notes: ''
+        });
         searchInventory();
       } else {
         setError(res.message || 'Failed to complete sale.');
@@ -715,6 +787,286 @@ export default function POS() {
               </div>
             )}
 
+            {/* Device Exchange / Trade-in Section */}
+            <div className={`rounded-xl border transition-all duration-200 overflow-hidden ${
+              hasExchange 
+                ? 'bg-amber-50/40 border-amber-300 shadow-xs' 
+                : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
+            }`}>
+              {/* Header Toggle */}
+              <div 
+                onClick={() => setHasExchange(!hasExchange)}
+                className="p-3 flex items-center justify-between cursor-pointer select-none"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${
+                    hasExchange ? 'bg-amber-500 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-900">Exchange / Trade-In Old Phone</span>
+                      {hasExchange && exchangeValueNum > 0 && (
+                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                          -{formatCurrency(exchangeValueNum)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      {hasExchange ? 'Trade-in details active • Value will be credited against total' : 'Customer exchanging an old device? Click to add trade-in details'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={hasExchange}
+                    onChange={(e) => setHasExchange(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Form Body when Active */}
+              {hasExchange && (
+                <div className="p-3 pt-0 border-t border-amber-200/80 space-y-2.5 text-xs animate-in fade-in duration-150">
+                  
+                  {/* Brand Quick Selector */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Device Brand *
+                    </label>
+                    <div className="flex flex-wrap gap-1 mb-1.5">
+                      {['Apple', 'Samsung', 'OnePlus', 'Xiaomi', 'Vivo', 'Oppo', 'Realme', 'Google', 'Other'].map(b => (
+                        <button
+                          key={b}
+                          type="button"
+                          onClick={() => setExchangeDevice(prev => ({ ...prev, brand: b }))}
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
+                            exchangeDevice.brand === b
+                              ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                              : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
+                          }`}
+                        >
+                          {b}
+                        </button>
+                      ))}
+                    </div>
+                    {exchangeDevice.brand === 'Other' && (
+                      <input
+                        type="text"
+                        placeholder="Enter brand name..."
+                        value={exchangeDevice.brand === 'Other' ? '' : exchangeDevice.brand}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, brand: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs mt-1"
+                      />
+                    )}
+                  </div>
+
+                  {/* Model & Variant / Color */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Model Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. iPhone 11 / Galaxy S21"
+                        value={exchangeDevice.model}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, model: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Storage / Variant
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 128GB / 8GB RAM"
+                        value={exchangeDevice.variant}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, variant: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* IMEI 1 & Color */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Primary IMEI 1 *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={18}
+                        placeholder="15-digit IMEI 1"
+                        value={exchangeDevice.imei1}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, imei1: e.target.value.replace(/\D/g, '') }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono tracking-wider"
+                      />
+                      {exchangeDevice.imei1 && exchangeDevice.imei1.length === 15 && (
+                        <span className="text-[9px] text-emerald-600 font-bold flex items-center gap-0.5 mt-0.5">
+                          ✓ Valid 15-digit IMEI
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Color
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Black, Midnight"
+                        value={exchangeDevice.color}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, color: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Condition Grade & Battery Health */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Condition Grade
+                      </label>
+                      <select
+                        value={exchangeDevice.condition_grade}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, condition_grade: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      >
+                        <option value="Grade A">Grade A (Like New / Flawless)</option>
+                        <option value="Grade B">Grade B (Minor Scratches)</option>
+                        <option value="Grade C">Grade C (Heavy Scratches / Dents)</option>
+                        <option value="Defective">Defective / Minor Fault</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Battery Health (%)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        placeholder="e.g. 86"
+                        value={exchangeDevice.battery_health}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, battery_health: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Included Accessories Checkboxes */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Accessories Handed Over
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {['Original Box', 'Original Charger', 'Data Cable', 'Purchase Bill / Receipt'].map(acc => {
+                        const isChecked = exchangeDevice.accessories_included.includes(acc);
+                        return (
+                          <button
+                            key={acc}
+                            type="button"
+                            onClick={() => {
+                              setExchangeDevice(prev => ({
+                                ...prev,
+                                accessories_included: isChecked
+                                  ? prev.accessories_included.filter(a => a !== acc)
+                                  : [...prev.accessories_included, acc]
+                              }));
+                            }}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition ${
+                              isChecked
+                                ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            {isChecked ? '✓ ' : '+ '}{acc}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Customer KYC ID Proof */}
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-amber-200/60">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Customer ID Proof
+                      </label>
+                      <select
+                        value={exchangeDevice.customer_id_proof_type}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, customer_id_proof_type: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      >
+                        <option value="Aadhaar">Aadhaar Card</option>
+                        <option value="PAN">PAN Card</option>
+                        <option value="Driving License">Driving License</option>
+                        <option value="Voter ID">Voter ID</option>
+                        <option value="Passport">Passport</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        ID Proof Number
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. XXXX-XXXX-1234"
+                        value={exchangeDevice.customer_id_proof_number}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, customer_id_proof_number: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Agreed Exchange Valuation (₹) */}
+                  <div className="pt-2 border-t border-amber-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950">
+                        Agreed Exchange Value / Credit (₹) *
+                      </label>
+                      <span className="text-[10px] font-bold text-emerald-700">
+                        Deducts from bill total
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-slate-400 font-bold">₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={exchangeDevice.exchange_value}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, exchange_value: e.target.value }))}
+                        className="w-full pl-7 pr-3 py-2 text-sm font-bold text-emerald-800 bg-white border-2 border-amber-400 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-500"
+                      />
+                    </div>
+                    {/* Presets */}
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      {[3000, 5000, 8000, 10000, 15000, 20000].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setExchangeDevice(prev => ({ ...prev, exchange_value: String(val) }))}
+                          className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white border border-slate-200 hover:border-amber-400 text-slate-700 transition"
+                        >
+                          ₹{val.toLocaleString()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+            </div>
+
             {/* Price Calculations */}
             <div className="border-t border-slate-200 pt-3 space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-600">
@@ -738,15 +1090,29 @@ export default function POS() {
                 <span className="font-medium">{formatCurrency(totalTax)}</span>
               </div>
               <div className="flex justify-between text-base font-extrabold text-slate-900 pt-2 border-t border-slate-200">
-                <span>Grand Total:</span>
-                <span className="text-emerald-700">{formatCurrency(grandTotal)}</span>
+                <span>Bill Grand Total:</span>
+                <span className="text-slate-900">{formatCurrency(grandTotal)}</span>
+              </div>
+
+              {/* Exchange Deduction line */}
+              {hasExchange && exchangeValueNum > 0 && (
+                <div className="flex justify-between text-emerald-700 font-bold pt-1.5 border-t border-dashed border-slate-200">
+                  <span>Exchange Credit ({exchangeDevice.brand} {exchangeDevice.model}):</span>
+                  <span>-{formatCurrency(exchangeValueNum)}</span>
+                </div>
+              )}
+
+              {/* Net Payable line */}
+              <div className="flex justify-between text-base font-black text-slate-900 pt-1.5 border-t-2 border-slate-900">
+                <span>Net Payable:</span>
+                <span className="text-emerald-700">{formatCurrency(netPayable)}</span>
               </div>
             </div>
 
             {/* Payment Method Selector */}
             <div className="pt-2 border-t border-slate-100">
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Payment Method
+                Payment Method (for {formatCurrency(netPayable)})
               </label>
               <div className="grid grid-cols-4 gap-1.5 text-xs font-semibold">
                 {['UPI', 'Card', 'Cash', 'Bank Transfer'].map(method => (
@@ -795,7 +1161,7 @@ export default function POS() {
               ) : (
                 <>
                   <CheckCircle className="w-4 h-4" />
-                  <span>Complete Sale & Generate Bill ({formatCurrency(grandTotal)})</span>
+                  <span>Complete Sale & Generate Bill ({formatCurrency(netPayable)})</span>
                 </>
               )}
             </button>

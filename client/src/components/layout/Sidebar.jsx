@@ -34,6 +34,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     { label: 'Stock Entry', path: '/admin/stock-entry', icon: Truck },
     { label: 'Stock Transfers', path: '/admin/transfers', icon: ArrowLeftRight },
     { label: 'POS / New Sale', path: '/admin/pos', icon: ShoppingBag, highlight: true },
+    { label: 'Exchanged Phones', path: '/admin/exchanged-phones', icon: ArrowLeftRight },
     { label: 'Customers', path: '/admin/customers', icon: Users },
     { label: 'Invoices & Bills', path: '/admin/invoices', icon: ReceiptText },
     { label: 'Returns & Refunds', path: '/admin/returns', icon: RotateCcw },
@@ -49,6 +50,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
   const employeeNav = [
     { label: 'Dashboard', path: '/employee/dashboard', icon: LayoutDashboard },
     { label: 'POS / New Sale', path: '/employee/pos', icon: ShoppingBag, highlight: true },
+    { label: 'Exchanged Phones', path: '/employee/exchanged-phones', icon: ArrowLeftRight },
     { label: 'Store Inventory', path: '/employee/inventory', icon: Smartphone },
     { label: 'Stock Entry', path: '/employee/stock-entry', icon: Truck },
     { label: 'Customers', path: '/employee/customers', icon: Users },

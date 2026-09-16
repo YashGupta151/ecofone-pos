@@ -6,7 +6,7 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
   const [printFormat, setPrintFormat] = useState('a4'); // 'a4' | 'thermal'
 
   if (!invoiceData) return null;
-  const { sale, items = [], payments = [], company = {} } = invoiceData;
+  const { sale, items = [], payments = [], exchange, company = {} } = invoiceData;
 
   // Calculate dynamic GST rates based on actual invoice items/sale values
   const rawItemTax = items[0]?.tax_rate;
@@ -211,9 +211,26 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     </div>
                   )}
                   <div className="flex justify-between font-extrabold text-xs pt-1 border-t border-slate-400">
-                    <span>TOTAL:</span>
+                    <span>{sale?.exchange_amount > 0 ? 'BILL TOTAL:' : 'TOTAL:'}</span>
                     <span>{formatCurrency(sale?.grand_total)}</span>
                   </div>
+                  {sale?.exchange_amount > 0 && (
+                    <div className="space-y-0.5 pt-0.5 border-t border-dashed border-slate-400">
+                      <div className="flex justify-between text-[9px] text-emerald-800 font-bold">
+                        <span>EXCHANGE CREDIT:</span>
+                        <span>-{formatCurrency(sale.exchange_amount)}</span>
+                      </div>
+                      {exchange && (
+                        <div className="text-[8px] text-slate-500 italic">
+                          ({exchange.brand} {exchange.model} • IMEI: {exchange.imei1})
+                        </div>
+                      )}
+                      <div className="flex justify-between font-black text-xs pt-0.5 border-t border-slate-400">
+                        <span>NET PAID:</span>
+                        <span>{formatCurrency(sale.net_payable !== undefined && sale.net_payable !== null ? sale.net_payable : Math.max(0, sale.grand_total - sale.exchange_amount))}</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex justify-between text-[9px] pt-0.5">
                     <span>PAID VIA:</span>
                     <span className="font-bold uppercase">{payments[0]?.payment_method || 'CASH'}</span>
@@ -371,8 +388,24 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                       Amount Chargeable (in words):
                     </span>
                     <p className="text-xs font-bold text-slate-800 italic bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                      {numberToWordsINR(sale?.grand_total)}
+                      {numberToWordsINR(sale?.exchange_amount > 0 ? (sale.net_payable !== undefined && sale.net_payable !== null ? sale.net_payable : Math.max(0, sale.grand_total - sale.exchange_amount)) : sale?.grand_total)}
                     </p>
+
+                    {/* Exchanged Device Details Box */}
+                    {sale?.exchange_amount > 0 && exchange && (
+                      <div className="mt-2.5 p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 text-[10px] text-amber-950">
+                        <span className="font-bold block text-amber-900 mb-0.5">Customer Exchange Device Credited:</span>
+                        <div className="font-semibold text-slate-800">{exchange.brand} {exchange.model} {exchange.variant ? `(${exchange.variant})` : ''} {exchange.color ? `• ${exchange.color}` : ''}</div>
+                        <div className="text-[9px] text-slate-600 mt-0.5">
+                          IMEI: <span className="font-mono font-bold text-slate-800">{exchange.imei1}</span>
+                          {exchange.battery_health ? ` • Battery: ${exchange.battery_health}%` : ''}
+                          {exchange.condition_grade ? ` • Grade: ${exchange.condition_grade}` : ''}
+                        </div>
+                        <div className="text-[9px] font-bold text-emerald-700 mt-1">
+                          Trade-In Valuation Credited: {formatCurrency(sale.exchange_amount)}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[10px] text-emerald-950 flex items-center gap-2">
                       <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -426,6 +459,20 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                       <span>Grand Total:</span>
                       <span className="text-emerald-800">{formatCurrency(sale?.grand_total)}</span>
                     </div>
+
+                    {/* Exchange Deduction Breakdown */}
+                    {sale?.exchange_amount > 0 && (
+                      <>
+                        <div className="flex justify-between text-emerald-800 font-bold text-xs pt-1.5 border-t border-dashed border-slate-300">
+                          <span>Less: Exchange Credit:</span>
+                          <span>-{formatCurrency(sale.exchange_amount)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-1.5 border-t-2 border-slate-900">
+                          <span>Net Payable / Paid:</span>
+                          <span className="text-emerald-900">{formatCurrency(sale.net_payable !== undefined && sale.net_payable !== null ? sale.net_payable : Math.max(0, sale.grand_total - sale.exchange_amount))}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
