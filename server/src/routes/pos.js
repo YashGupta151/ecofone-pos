@@ -286,15 +286,13 @@ router.post('/', authenticateToken, (req, res) => {
       }
 
       const sPrice = parseFloat(item.selling_price || phone.selling_price);
-      const disc = parseFloat(item.discount || 0);
-      const netPrice = Math.max(0, sPrice - disc);
       // Purchase price of device (fallback to total_cost if purchase_price <= 0)
       const pPrice = parseFloat(phone.purchase_price !== undefined && phone.purchase_price !== null && parseFloat(phone.purchase_price) > 0
         ? phone.purchase_price
         : (phone.total_cost || 0));
 
-      // Margin Scheme Rule 32(5): Difference = Selling Price - Purchase Price
-      const difference = Math.max(0, netPrice - pPrice);
+      // Margin Scheme Rule 32(5): Difference = Selling Price - Purchase Price (calculated before discount)
+      const difference = Math.max(0, sPrice - pPrice);
       const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
         ? parseFloat(item.tax_rate)
         : systemDefaultTaxRate;
@@ -313,8 +311,12 @@ router.post('/', authenticateToken, (req, res) => {
         sgst = Math.round((taxAmount - cgst) * 100) / 100;
       }
 
-      // GST on difference is added to the total amount of the bill
-      const finalPrice = netPrice + taxAmount;
+      // Gross amount including GST
+      const grossPriceWithTax = sPrice + taxAmount;
+
+      // Discount is applied on the grand total amount AFTER the GST calculation
+      const disc = Math.min(grossPriceWithTax, parseFloat(item.discount || 0));
+      const finalPrice = Math.max(0, grossPriceWithTax - disc);
 
       subtotal += sPrice;
       discountTotal += disc;

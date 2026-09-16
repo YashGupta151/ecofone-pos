@@ -226,10 +226,9 @@ router.post('/', authenticateToken, (req, res) => {
   const defaultTaxRow = db.prepare(`SELECT value FROM settings WHERE key = 'default_tax_rate'`).get();
   const fallbackTaxRate = defaultTaxRow && !isNaN(parseFloat(defaultTaxRow.value)) ? parseFloat(defaultTaxRow.value) : 5.0;
   const tRate = (tax_rate !== undefined && tax_rate !== null && !isNaN(parseFloat(tax_rate))) ? parseFloat(tax_rate) : fallbackTaxRate;
-  const taxable = Math.max(0, sPrice - disc);
-  const difference = Math.max(0, taxable - pCost);
+  const difference = Math.max(0, sPrice - pCost);
   const taxAmount = Math.round((difference * (tRate / 100)) * 100) / 100;
-  const finalPrice = taxable + taxAmount;
+  const finalPrice = Math.max(0, (sPrice + taxAmount) - disc);
 
   const targetStoreId = (req.user.role === 'admin' && current_store_id) ? parseInt(current_store_id) : req.user.assigned_store_id;
   if (!targetStoreId) {
@@ -434,10 +433,9 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
         const tRate = (dev.tax_rate !== undefined && dev.tax_rate !== null && !isNaN(parseFloat(dev.tax_rate)))
           ? parseFloat(dev.tax_rate)
           : systemTaxRate;
-        const taxable = Math.max(0, sellingPrice - disc);
-        const difference = Math.max(0, taxable - pCost);
+        const difference = Math.max(0, sellingPrice - pCost);
         const taxAmount = Math.round((difference * (tRate / 100)) * 100) / 100;
-        const finalPrice = taxable + taxAmount;
+        const finalPrice = Math.max(0, (sellingPrice + taxAmount) - disc);
 
         const internalId = `ECO-PH-${String(nextSeq++).padStart(5, '0')}`;
         const conditionGrade = dev.condition_grade || dev.grade || 'Grade A';
@@ -573,10 +571,9 @@ router.put('/:id', authenticateToken, (req, res) => {
   const defaultTaxRow = db.prepare(`SELECT value FROM settings WHERE key = 'default_tax_rate'`).get();
   const fallbackTaxRate = defaultTaxRow && !isNaN(parseFloat(defaultTaxRow.value)) ? parseFloat(defaultTaxRow.value) : 5.0;
   const tRate = (tax_rate !== undefined && tax_rate !== null && !isNaN(parseFloat(tax_rate))) ? parseFloat(tax_rate) : fallbackTaxRate;
-  const taxable = Math.max(0, sPrice - disc);
-  const difference = Math.max(0, taxable - pCost);
+  const difference = Math.max(0, sPrice - pCost);
   const taxAmount = Math.round((difference * (tRate / 100)) * 100) / 100;
-  const finalPrice = taxable + taxAmount;
+  const finalPrice = Math.max(0, (sPrice + taxAmount) - disc);
 
   const targetStoreId = (req.user.role === 'admin' && current_store_id) ? parseInt(current_store_id) : (existing.current_store_id || req.user.assigned_store_id);
   const updatedStatus = stock_status || existing.stock_status || 'AVAILABLE';

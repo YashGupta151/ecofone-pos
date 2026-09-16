@@ -182,12 +182,6 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     <span>Subtotal:</span>
                     <span>{formatCurrency(sale?.subtotal)}</span>
                   </div>
-                  {sale?.discount_total > 0 && (
-                    <div className="flex justify-between text-rose-600 font-semibold">
-                      <span>Final Discount {sale?.subtotal > 0 ? `(${((sale.discount_total / sale.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}:</span>
-                      <span>-{formatCurrency(sale?.discount_total)}</span>
-                    </div>
-                  )}
                   <div className="flex justify-between">
                     <span>Taxable Diff (Margin):</span>
                     <span>{formatCurrency(sale?.taxable_amount)}</span>
@@ -214,6 +208,16 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     <span>Total GST (5% on Diff):</span>
                     <span>+{formatCurrency(sale?.total_tax)}</span>
                   </div>
+                  <div className="flex justify-between text-[9px] text-slate-700">
+                    <span>Total (Items + GST):</span>
+                    <span>{formatCurrency((sale?.subtotal || 0) + (sale?.total_tax || 0))}</span>
+                  </div>
+                  {sale?.discount_total > 0 && (
+                    <div className="flex justify-between text-rose-600 font-semibold">
+                      <span>Discount (on Total):</span>
+                      <span>-{formatCurrency(sale?.discount_total)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-extrabold text-xs pt-1 border-t border-slate-400">
                     <span>{sale?.exchange_amount > 0 ? 'BILL TOTAL:' : 'TOTAL:'}</span>
                     <span>{formatCurrency(sale?.grand_total)}</span>
@@ -425,14 +429,6 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                       <span>Subtotal (Items):</span>
                       <span className="font-medium">{formatCurrency(sale?.subtotal)}</span>
                     </div>
-                    {sale?.discount_total > 0 && (
-                      <div className="flex justify-between text-rose-600 font-medium">
-                        <span>
-                          Final Discount {sale?.subtotal > 0 ? `(${((sale.discount_total / sale.subtotal) * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}:
-                        </span>
-                        <span className="font-bold">-{formatCurrency(sale?.discount_total)}</span>
-                      </div>
-                    )}
                     <div className="flex justify-between text-slate-700 font-medium pt-1 border-t border-slate-200">
                       <span>Taxable Margin (Difference):</span>
                       <span className="font-semibold">{formatCurrency(sale?.taxable_amount)}</span>
@@ -459,6 +455,18 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                       <span>Total GST (5% on Difference):</span>
                       <span className="font-bold text-emerald-800">+{formatCurrency(sale?.total_tax)}</span>
                     </div>
+                    <div className="flex justify-between text-slate-800 font-semibold pt-1 border-t border-slate-100">
+                      <span>Total (Items + GST):</span>
+                      <span>{formatCurrency((sale?.subtotal || 0) + (sale?.total_tax || 0))}</span>
+                    </div>
+                    {sale?.discount_total > 0 && (
+                      <div className="flex justify-between text-rose-600 font-medium">
+                        <span>
+                          Discount (Applied on Total):
+                        </span>
+                        <span className="font-bold">-{formatCurrency(sale?.discount_total)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-2 border-t-2 border-slate-900">
                       <span>Grand Total:</span>
                       <span className="text-emerald-800">{formatCurrency(sale?.grand_total)}</span>

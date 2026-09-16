@@ -229,20 +229,32 @@ export default function POS() {
     setCart(cart.filter(item => item.id !== phoneId));
   };
 
-  // Item-level discount updater
+  // Item-level discount updater (applied on item total after GST)
   const updateItemDiscount = (phoneId, val, mode) => {
     setCart(cart.map(item => {
       if (item.id === phoneId) {
         const itemMode = mode !== undefined ? mode : (item.discount_mode || 'percent');
         const rawVal = val !== undefined ? val : (item.discount_value || '');
         const numVal = parseFloat(rawVal) || 0;
-        let rupeeDiscount = 0;
 
+        // Calculate item gross total with GST so discount applies on the total amount after GST
+        const sPrice = parseFloat(item.selling_price) || 0;
+        const pPrice = parseFloat(item.purchase_price !== undefined && item.purchase_price !== null && parseFloat(item.purchase_price) > 0
+          ? item.purchase_price
+          : (item.total_cost || 0));
+        const diff = Math.max(0, sPrice - pPrice);
+        const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
+          ? parseFloat(item.tax_rate)
+          : systemTaxRate;
+        const itemTax = Math.round((diff * (tRate / 100)) * 100) / 100;
+        const grossTotalWithTax = sPrice + itemTax;
+
+        let rupeeDiscount = 0;
         if (itemMode === 'percent') {
           const clampedPercent = Math.min(100, Math.max(0, numVal));
-          rupeeDiscount = Math.round(((item.selling_price * clampedPercent) / 100) * 100) / 100;
+          rupeeDiscount = Math.round(((grossTotalWithTax * clampedPercent) / 100) * 100) / 100;
         } else {
-          rupeeDiscount = Math.min(item.selling_price, Math.max(0, numVal));
+          rupeeDiscount = Math.min(grossTotalWithTax, Math.max(0, numVal));
         }
 
         return {
@@ -260,42 +272,43 @@ export default function POS() {
     updateItemDiscount(phoneId, discount, 'fixed');
   };
 
-  // Calculate totals strictly using Margin Scheme (5% GST on Difference = Selling Price - Purchase Price)
+  // Calculate totals strictly using Margin Scheme (5% GST on Difference = Selling Price - Purchase Price, and discount applied after GST)
   const subtotal = cart.reduce((acc, item) => acc + (parseFloat(item.selling_price) || 0), 0);
-  const totalDiscount = cart.reduce((acc, item) => acc + (parseFloat(item.discount) || 0), 0);
-  const overallDiscountPercent = subtotal > 0 ? ((totalDiscount / subtotal) * 100) : 0;
-  const baseBillAmount = Math.max(0, subtotal - totalDiscount);
 
-  // Compute item margins and GST on margin difference
+  // Compute item margins and GST on margin difference, then apply discount on total amount
   const cartWithMargin = cart.map(item => {
     const sPrice = parseFloat(item.selling_price) || 0;
-    const disc = parseFloat(item.discount) || 0;
-    const netPrice = Math.max(0, sPrice - disc);
     const pPrice = parseFloat(item.purchase_price !== undefined && item.purchase_price !== null && parseFloat(item.purchase_price) > 0
       ? item.purchase_price
       : (item.total_cost || 0));
-    const difference = Math.max(0, netPrice - pPrice);
+    // Difference is strictly Selling Price - Purchase Price
+    const difference = Math.max(0, sPrice - pPrice);
     const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
       ? parseFloat(item.tax_rate)
       : systemTaxRate;
     const itemTax = Math.round((difference * (tRate / 100)) * 100) / 100;
-    const finalPrice = netPrice + itemTax;
+    const grossPriceWithTax = sPrice + itemTax;
+    const disc = Math.min(grossPriceWithTax, parseFloat(item.discount) || 0);
+    const finalPrice = Math.max(0, grossPriceWithTax - disc);
     return {
       ...item,
       sPrice,
-      disc,
-      netPrice,
       pPrice,
       difference,
       tRate,
       itemTax,
+      grossPriceWithTax,
+      disc,
       finalPrice
     };
   });
 
   const totalDifference = cartWithMargin.reduce((acc, item) => acc + item.difference, 0);
   const totalTax = cartWithMargin.reduce((acc, item) => acc + item.itemTax, 0);
-  const grandTotal = baseBillAmount + totalTax;
+  const totalGrossWithTax = subtotal + totalTax;
+  const totalDiscount = cartWithMargin.reduce((acc, item) => acc + item.disc, 0);
+  const overallDiscountPercent = totalGrossWithTax > 0 ? ((totalDiscount / totalGrossWithTax) * 100) : 0;
+  const grandTotal = Math.max(0, totalGrossWithTax - totalDiscount);
 
   // Exchange Valuation & Net Amount Payable
   const exchangeValueNum = hasExchange ? Math.max(0, parseFloat(exchangeDevice.exchange_value) || 0) : 0;
@@ -692,9 +705,9 @@ export default function POS() {
               <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
                 {cartWithMargin.map((item) => {
                   const itemSellingPrice = item.sPrice;
+                  const itemGrossPriceWithTax = item.grossPriceWithTax;
                   const itemDiscount = item.disc;
-                  const itemNetPrice = item.netPrice;
-                  const itemPercent = itemSellingPrice > 0 ? ((itemDiscount / itemSellingPrice) * 100) : 0;
+                  const itemPercent = itemGrossPriceWithTax > 0 ? ((itemDiscount / itemGrossPriceWithTax) * 100) : 0;
                   const itemDifference = item.difference;
                   const itemTax = item.itemTax;
                   const itemFinalPrice = item.finalPrice;
@@ -721,7 +734,7 @@ export default function POS() {
                             {itemDiscount > 0 ? (
                               <div>
                                 <span className="line-through text-slate-400 text-[10px] block">
-                                  {formatCurrency(itemSellingPrice)}
+                                  {formatCurrency(itemGrossPriceWithTax)}
                                 </span>
                                 <span className="font-extrabold text-emerald-700 text-xs block">
                                   {formatCurrency(itemFinalPrice)}
@@ -773,7 +786,7 @@ export default function POS() {
                             <input
                               type="number"
                               min="0"
-                              max={item.discount_mode === 'percent' ? 100 : itemSellingPrice}
+                              max={item.discount_mode === 'percent' ? 100 : itemGrossPriceWithTax}
                               value={item.discount_value !== undefined ? item.discount_value : (item.discount || '')}
                               onChange={(e) => updateItemDiscount(item.id, e.target.value, item.discount_mode)}
                               placeholder="0"
@@ -1128,20 +1141,8 @@ export default function POS() {
             {/* Price Calculations */}
             <div className="border-t border-slate-200 pt-3 space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-600">
-                <span>Subtotal:</span>
+                <span>Subtotal (Items):</span>
                 <span>{formatCurrency(subtotal)}</span>
-              </div>
-              {totalDiscount > 0 && (
-                <div className="flex justify-between text-rose-600 font-medium">
-                  <span>
-                    Final Discount {overallDiscountPercent > 0 ? `(${overallDiscountPercent.toFixed(1).replace(/\.0$/, '')}%)` : ''}:
-                  </span>
-                  <span className="font-bold">-{formatCurrency(totalDiscount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-slate-600">
-                <span>Net Item Total:</span>
-                <span className="font-medium">{formatCurrency(baseBillAmount)}</span>
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Taxable Margin (Difference):</span>
@@ -1151,6 +1152,18 @@ export default function POS() {
                 <span>GST ({systemTaxRate}% on Difference):</span>
                 <span className="font-bold text-emerald-700">+{formatCurrency(totalTax)}</span>
               </div>
+              <div className="flex justify-between text-slate-700 font-medium pt-1 border-t border-slate-100">
+                <span>Total (Items + GST):</span>
+                <span>{formatCurrency(totalGrossWithTax)}</span>
+              </div>
+              {totalDiscount > 0 && (
+                <div className="flex justify-between text-rose-600 font-medium">
+                  <span>
+                    Discount Applied on Total {overallDiscountPercent > 0 ? `(${overallDiscountPercent.toFixed(1).replace(/\.0$/, '')}%)` : ''}:
+                  </span>
+                  <span className="font-bold">-{formatCurrency(totalDiscount)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-base font-extrabold text-slate-900 pt-2 border-t border-slate-200">
                 <span>Bill Grand Total:</span>
                 <span className="text-slate-900">{formatCurrency(grandTotal)}</span>
