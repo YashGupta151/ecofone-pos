@@ -43,7 +43,7 @@ router.get('/', authenticateToken, (req, res) => {
   query += ` ORDER BY e.expense_date DESC, e.id DESC`;
   const expenses = db.prepare(query).all(...params);
 
-  // Summary by category
+  // Summary by category (respecting selected store filter and date range)
   let catSumQuery = `
     SELECT category, SUM(amount) as total_amount
     FROM expenses
@@ -53,7 +53,21 @@ router.get('/', authenticateToken, (req, res) => {
   if (req.user.role !== 'admin') {
     catSumQuery += ` AND (store_id = ? OR store_id IS NULL)`;
     catParams.push(req.user.assigned_store_id);
+  } else if (store_id) {
+    catSumQuery += ` AND store_id = ?`;
+    catParams.push(parseInt(store_id));
   }
+
+  if (date_from) {
+    catSumQuery += ` AND expense_date >= ?`;
+    catParams.push(date_from);
+  }
+
+  if (date_to) {
+    catSumQuery += ` AND expense_date <= ?`;
+    catParams.push(date_to);
+  }
+
   catSumQuery += ` GROUP BY category ORDER BY total_amount DESC`;
   const categorySummary = db.prepare(catSumQuery).all(...catParams);
 

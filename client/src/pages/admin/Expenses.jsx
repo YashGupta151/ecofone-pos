@@ -83,6 +83,19 @@ export default function Expenses() {
   };
 
   const totalExpenseSum = expenses.reduce((a, b) => a + (b.amount || 0), 0);
+  const currentStoreName = stores.find(s => String(s.id) === String(selectedStore))?.name;
+
+  const displayCategories = React.useMemo(() => {
+    const list = [...categories];
+    const standardCategories = ['Rent', 'Marketing', 'Packaging', 'Electricity', 'Salaries', 'Transportation'];
+    for (const name of standardCategories) {
+      if (list.length >= 4) break;
+      if (!list.some(c => c.category?.toLowerCase() === name.toLowerCase())) {
+        list.push({ category: name, total_amount: 0 });
+      }
+    }
+    return list.slice(0, 4);
+  }, [categories]);
 
   return (
     <div className="space-y-5">
@@ -100,7 +113,7 @@ export default function Expenses() {
 
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Record Expense</span>
@@ -108,13 +121,34 @@ export default function Expenses() {
       </div>
 
       {/* Category Totals */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {categories.slice(0, 4).map(cat => (
-          <div key={cat.category} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">{cat.category}</span>
-            <span className="font-extrabold text-slate-900 text-base mt-0.5 block">{formatCurrency(cat.total_amount)}</span>
-          </div>
-        ))}
+      <div>
+        <div className="flex items-center justify-between mb-2 px-1">
+          <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+            <Building2 className="w-3.5 h-3.5 text-slate-400" />
+            {selectedStore ? (
+              <span>Category Breakdown: <strong className="text-emerald-700">{currentStoreName || 'Selected Store'}</strong></span>
+            ) : (
+              <span className="text-slate-500">Category Breakdown — <strong className="text-slate-800">All Stores (Company-Wide)</strong></span>
+            )}
+          </span>
+          {selectedStore && (
+            <button
+              onClick={() => setSelectedStore('')}
+              className="text-[11px] text-emerald-600 hover:text-emerald-800 font-semibold cursor-pointer underline"
+            >
+              Reset to All Stores
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {displayCategories.map(cat => (
+            <div key={cat.category} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">{cat.category}</span>
+              <span className="font-extrabold text-slate-900 text-base mt-0.5 block">{formatCurrency(cat.total_amount)}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Expenses Table */}
