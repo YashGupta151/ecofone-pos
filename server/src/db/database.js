@@ -7,10 +7,20 @@ let dbPath;
 
 if (isVercel) {
   const tmpPath = path.join('/tmp', 'ecofone.db');
-  const bundledDb = path.resolve(__dirname, '../../data/ecofone.db');
+  const possiblePaths = [
+    path.resolve(__dirname, '../../data/ecofone.db'),
+    path.resolve(process.cwd(), 'server/data/ecofone.db'),
+    path.join('/var/task', 'server/data/ecofone.db'),
+    path.join(__dirname, 'ecofone.db')
+  ];
+  const bundledDb = possiblePaths.find(p => fs.existsSync(p));
   if (!fs.existsSync(tmpPath)) {
-    if (fs.existsSync(bundledDb)) {
-      fs.copyFileSync(bundledDb, tmpPath);
+    if (bundledDb) {
+      try {
+        fs.copyFileSync(bundledDb, tmpPath);
+      } catch (e) {
+        console.error('Failed to copy bundled db to /tmp:', e);
+      }
     }
   }
   dbPath = tmpPath;
@@ -416,5 +426,57 @@ function initSchema() {
 }
 
 initSchema();
+
+// Auto-seed or restore settings if settings table is empty
+try {
+  const countRow = db.prepare(`SELECT COUNT(*) as count FROM settings`).get();
+  if (!countRow || countRow.count === 0) {
+    // Check if JSON backup file exists
+    const backupPaths = [
+      '/tmp/settings_backup.json',
+      path.resolve(__dirname, '../../data/settings_backup.json'),
+      path.resolve(process.cwd(), 'server/data/settings_backup.json')
+    ];
+    let restored = false;
+    for (const bp of backupPaths) {
+      if (fs.existsSync(bp)) {
+        try {
+          const raw = fs.readFileSync(bp, 'utf-8');
+          const parsed = JSON.parse(raw);
+          const upsert = db.prepare(`INSERT OR REPLACE INTO settings (key, value, group_name) VALUES (?, ?, ?)`);
+          for (const [k, v] of Object.entries(parsed)) {
+            upsert.run(k, String(v), 'general');
+          }
+          restored = true;
+          break;
+        } catch (e) {}
+      }
+    }
+
+    if (!restored) {
+      const defaultSettings = [
+        ['company_name', 'Ecofone', 'general'],
+        ['company_tagline', 'Luxury within reach', 'general'],
+        ['logo_url', '/logo.png', 'general'],
+        ['currency_symbol', '₹', 'general'],
+        ['currency_code', 'INR', 'general'],
+        ['company_address', 'Ecofone Central HQ, Tower 4, BKC, Bandra East, Mumbai, Maharashtra 400051', 'general'],
+        ['company_phone', '+91 1800 266 3263', 'general'],
+        ['company_email', 'contact@ecofone.in', 'general'],
+        ['company_gstin', '27AABCE1234F1Z5', 'tax'],
+        ['invoice_prefix', 'ECO', 'invoice'],
+        ['invoice_footer', 'Thank you for choosing Ecofone! Certified Refurbished Premium Devices.', 'invoice'],
+        ['invoice_terms', '1. 6 Months Ecofone Certified Warranty included.\n2. Warranty covers manufacturing and hardware defects.\n3. Physical and liquid damages are void from warranty.\n4. Original tax invoice is required for warranty and claims.', 'invoice'],
+        ['default_tax_rate', '18.0', 'tax']
+      ];
+      const insertStmt = db.prepare(`INSERT OR IGNORE INTO settings (key, value, group_name) VALUES (?, ?, ?)`);
+      for (const [k, v, g] of defaultSettings) {
+        insertStmt.run(k, v, g);
+      }
+    }
+  }
+} catch (err) {
+  console.error('Error initializing settings table:', err);
+}
 
 module.exports = db;

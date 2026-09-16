@@ -60,8 +60,20 @@ export default function POS() {
   const [error, setError] = useState('');
   const [completedInvoice, setCompletedInvoice] = useState(null);
 
-  // System GST Tax Rate from Company Settings
-  const [systemTaxRate, setSystemTaxRate] = useState(18.0);
+  // System GST Tax Rate from Company Settings (initialized from persistent cache)
+  const [systemTaxRate, setSystemTaxRate] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ecofone_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.default_tax_rate !== undefined && parsed.default_tax_rate !== '') {
+          const rate = parseFloat(parsed.default_tax_rate);
+          if (!isNaN(rate)) return rate;
+        }
+      }
+    } catch (e) {}
+    return 18.0;
+  });
 
   // Load stores & system settings on mount
   useEffect(() => {
@@ -84,7 +96,23 @@ export default function POS() {
             const parsedRate = parseFloat(settingsRes.settings.default_tax_rate);
             if (!isNaN(parsedRate)) {
               setSystemTaxRate(parsedRate);
+              try {
+                const current = JSON.parse(localStorage.getItem('ecofone_settings') || '{}');
+                current.default_tax_rate = String(parsedRate);
+                localStorage.setItem('ecofone_settings', JSON.stringify(current));
+              } catch (e) {}
             }
+          } else {
+            // If server settings are empty, sync cached settings to server
+            try {
+              const saved = localStorage.getItem('ecofone_settings');
+              if (saved) {
+                apiFetch('/settings', {
+                  method: 'PUT',
+                  body: JSON.stringify({ settings: JSON.parse(saved) })
+                }).catch(() => {});
+              }
+            } catch (e) {}
           }
         }
       } catch (e) {

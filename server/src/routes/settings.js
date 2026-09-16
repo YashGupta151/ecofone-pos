@@ -3,11 +3,44 @@ const router = express.Router();
 const db = require('../db/database');
 const { authenticateToken, requireAdmin, logAudit } = require('../middleware/auth');
 
+const fs = require('fs');
+const path = require('path');
+
 // GET /api/settings
 router.get('/', authenticateToken, (req, res) => {
-  const rows = db.prepare(`SELECT key, value, group_name FROM settings`).all();
+  let rows = db.prepare(`SELECT key, value, group_name FROM settings`).all();
+
+  // If settings table is unexpectedly empty (cold lambda), restore from backup
+  if (!rows || rows.length === 0) {
+    const backupPaths = [
+      '/tmp/settings_backup.json',
+      path.resolve(__dirname, '../../data/settings_backup.json'),
+      path.resolve(process.cwd(), 'server/data/settings_backup.json')
+    ];
+    for (const bp of backupPaths) {
+      if (fs.existsSync(bp)) {
+        try {
+          const raw = fs.readFileSync(bp, 'utf-8');
+          const parsed = JSON.parse(raw);
+          const upsert = db.prepare(`
+            INSERT INTO settings (key, value, group_name, updated_at)
+            VALUES (?, ?, 'general', CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+          `);
+          for (const [k, v] of Object.entries(parsed)) {
+            upsert.run(k, String(v));
+          }
+          rows = db.prepare(`SELECT key, value, group_name FROM settings`).all();
+          break;
+        } catch (e) {}
+      }
+    }
+  }
+
   const settings = {};
-  rows.forEach(r => settings[r.key] = r.value);
+  if (rows && rows.length > 0) {
+    rows.forEach(r => settings[r.key] = r.value);
+  }
 
   const taxRates = db.prepare(`SELECT * FROM tax_rates`).all();
   const grades = db.prepare(`SELECT * FROM grades`).all();
@@ -47,6 +80,17 @@ router.put('/', authenticateToken, requireAdmin, (req, res) => {
   });
 
   saveTx();
+
+  // Persist backup JSON to filesystem
+  try {
+    const backupJson = JSON.stringify(settings);
+    fs.writeFileSync('/tmp/settings_backup.json', backupJson);
+    const dataDir = path.resolve(__dirname, '../../data');
+    if (fs.existsSync(dataDir)) {
+      fs.writeFileSync(path.join(dataDir, 'settings_backup.json'), backupJson);
+    }
+  } catch (e) {}
+
   logAudit(req.user.id, req.user.username, 'UPDATE_SETTINGS', null, 'SETTINGS', null, 'Company and invoice settings updated', req);
 
   res.json({ success: true, message: 'Settings saved successfully.' });

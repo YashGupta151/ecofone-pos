@@ -2,20 +2,32 @@ import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Save, Building2, Receipt, ShieldCheck, CheckCircle } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 
-export default function Settings() {
-  const [settings, setSettings] = useState({
-    company_name: 'Ecofone',
-    company_tagline: 'Luxury within reach',
-    company_address: 'Ecofone Central HQ, Tower 4, BKC, Bandra East, Mumbai, Maharashtra 400051',
-    company_phone: '+91 1800 266 3263',
-    company_email: 'contact@ecofone.in',
-    company_gstin: '27AABCE1234F1Z5',
-    invoice_prefix: 'ECO',
-    invoice_footer: 'Thank you for choosing Ecofone! Certified Refurbished Premium Devices.',
-    invoice_terms: '1. 6 Months Ecofone Certified Warranty included.\n2. Warranty covers manufacturing and hardware defects.\n3. Physical and liquid damages are void from warranty.\n4. Original tax invoice is required for warranty and claims.',
-    default_tax_rate: '18.0'
-  });
+const DEFAULT_SETTINGS = {
+  company_name: 'Ecofone',
+  company_tagline: 'Luxury within reach',
+  company_address: 'Ecofone Central HQ, Tower 4, BKC, Bandra East, Mumbai, Maharashtra 400051',
+  company_phone: '+91 1800 266 3263',
+  company_email: 'contact@ecofone.in',
+  company_gstin: '27AABCE1234F1Z5',
+  invoice_prefix: 'ECO',
+  invoice_footer: 'Thank you for choosing Ecofone! Certified Refurbished Premium Devices.',
+  invoice_terms: '1. 6 Months Ecofone Certified Warranty included.\n2. Warranty covers manufacturing and hardware defects.\n3. Physical and liquid damages are void from warranty.\n4. Original tax invoice is required for warranty and claims.',
+  default_tax_rate: '18.0'
+};
 
+const getCachedSettings = () => {
+  try {
+    const saved = localStorage.getItem('ecofone_settings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    }
+  } catch (e) {}
+  return DEFAULT_SETTINGS;
+};
+
+export default function Settings() {
+  const [settings, setSettings] = useState(getCachedSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -23,11 +35,25 @@ export default function Settings() {
     async function loadSettings() {
       try {
         const res = await apiFetch('/settings');
-        if (res.success && res.settings) {
-          setSettings(s => ({ ...s, ...res.settings }));
+        if (res.success && res.settings && Object.keys(res.settings).length > 0) {
+          setSettings(s => {
+            const merged = { ...s, ...res.settings };
+            try {
+              localStorage.setItem('ecofone_settings', JSON.stringify(merged));
+            } catch (err) {}
+            return merged;
+          });
+        } else {
+          // If server settings are uninitialized/empty, push cached settings to server
+          const current = getCachedSettings();
+          apiFetch('/settings', {
+            method: 'PUT',
+            body: JSON.stringify({ settings: current })
+          }).catch(() => {});
         }
-      } catch (e) {}
-      finally {
+      } catch (e) {
+        console.error('Could not load remote settings, using local cache:', e);
+      } finally {
         setLoading(false);
       }
     }
@@ -38,6 +64,12 @@ export default function Settings() {
     e.preventDefault();
     setSaving(true);
     try {
+      // 1. Persist immediately to browser local storage so refresh never resets it
+      try {
+        localStorage.setItem('ecofone_settings', JSON.stringify(settings));
+      } catch (err) {}
+
+      // 2. Persist to backend server
       const res = await apiFetch('/settings', {
         method: 'PUT',
         body: JSON.stringify({ settings })
@@ -45,10 +77,10 @@ export default function Settings() {
       if (res.success) {
         alert('System settings updated successfully!');
       } else {
-        alert(res.message);
+        alert(res.message || 'Settings saved locally.');
       }
     } catch (err) {
-      alert(err.message);
+      alert('Settings saved locally: ' + (err.message || 'Updated in browser storage.'));
     } finally {
       setSaving(false);
     }

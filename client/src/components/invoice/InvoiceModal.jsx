@@ -10,7 +10,21 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
 
   // Calculate dynamic GST rates based on actual invoice items/sale values
   const rawItemTax = items[0]?.tax_rate;
-  const companyTax = company?.default_tax_rate;
+  let cachedCompanyTax = null;
+  try {
+    const saved = localStorage.getItem('ecofone_settings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.default_tax_rate !== undefined && parsed.default_tax_rate !== '') {
+        cachedCompanyTax = parseFloat(parsed.default_tax_rate);
+      }
+    }
+  } catch (e) {}
+
+  const companyTax = (company?.default_tax_rate !== undefined && company?.default_tax_rate !== null)
+    ? company.default_tax_rate
+    : cachedCompanyTax;
+
   const totalTaxRate = (sale?.taxable_amount > 0 && typeof sale?.total_tax === 'number')
     ? Math.round(((sale.total_tax / sale.taxable_amount) * 100) * 10) / 10
     : (rawItemTax !== undefined && rawItemTax !== null && !isNaN(parseFloat(rawItemTax))
