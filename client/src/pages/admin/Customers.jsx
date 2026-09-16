@@ -64,10 +64,27 @@ export default function Customers() {
 
   const handleAddCustomer = async (e) => {
     e.preventDefault();
+
+    const cleanPhone = (newCust.phone || '').replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      alert('Phone number must be exactly 10 digits.');
+      return;
+    }
+
+    const cleanId = (newCust.id_proof_number || '').replace(/\D/g, '');
+    if (newCust.id_proof_number && cleanId.length !== 12) {
+      alert('ID Proof number must be exactly 12 digits.');
+      return;
+    }
+
     try {
       const res = await apiFetch('/customers', {
         method: 'POST',
-        body: JSON.stringify(newCust)
+        body: JSON.stringify({
+          ...newCust,
+          phone: cleanPhone,
+          id_proof_number: cleanId || null
+        })
       });
       if (res.success) {
         setShowAddModal(false);
@@ -187,7 +204,10 @@ export default function Customers() {
             <div className="flex items-center justify-between border-b pb-3">
               <div>
                 <h3 className="font-bold text-base text-slate-900">{selectedCustomer.customer.full_name}</h3>
-                <p className="text-[11px] text-slate-500 font-mono">{selectedCustomer.customer.customer_code} • {selectedCustomer.customer.phone}</p>
+                <p className="text-[11px] text-slate-500 font-mono">
+                  {selectedCustomer.customer.customer_code} • {selectedCustomer.customer.phone}
+                  {selectedCustomer.customer.id_proof_number && ` • ${selectedCustomer.customer.id_proof_type || 'ID'}: ${selectedCustomer.customer.id_proof_number}`}
+                </p>
               </div>
               <button onClick={() => setSelectedCustomer(null)}><X className="w-4 h-4 text-slate-400" /></button>
             </div>
@@ -266,13 +286,15 @@ export default function Customers() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-600 block mb-1">Mobile Phone *</label>
+                <label className="font-bold text-slate-600 block mb-1">Mobile Phone (10 Digits) *</label>
                 <input
                   type="tel"
                   required
+                  maxLength={10}
+                  placeholder="Enter 10-digit mobile number"
                   value={newCust.phone}
-                  onChange={(e) => setNewCust({ ...newCust, phone: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                  onChange={(e) => setNewCust({ ...newCust, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                  className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono"
                 />
               </div>
 
@@ -284,6 +306,34 @@ export default function Customers() {
                   onChange={(e) => setNewCust({ ...newCust, email: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">ID Proof Type</label>
+                  <select
+                    value={newCust.id_proof_type}
+                    onChange={(e) => setNewCust({ ...newCust, id_proof_type: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                  >
+                    <option value="Aadhaar">Aadhaar Card</option>
+                    <option value="PAN">PAN Card</option>
+                    <option value="Driving License">Driving License</option>
+                    <option value="Voter ID">Voter ID</option>
+                    <option value="Passport">Passport</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">ID Proof Number (12 Digits)</label>
+                  <input
+                    type="text"
+                    maxLength={12}
+                    placeholder="12-digit ID number"
+                    value={newCust.id_proof_number}
+                    onChange={(e) => setNewCust({ ...newCust, id_proof_number: e.target.value.replace(/\D/g, '').slice(0, 12) })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">

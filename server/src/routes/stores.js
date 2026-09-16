@@ -69,11 +69,19 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
     return res.status(400).json({ success: false, message: 'Name, code, city, and state are required.' });
   }
 
+  let cleanPhone = '';
+  if (phone) {
+    cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Store phone number must be exactly 10 digits.' });
+    }
+  }
+
   try {
     const info = db.prepare(`
       INSERT INTO stores (name, code, address, city, state, pincode, phone, email, gstin, manager, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
-    `).run(name, code, address || '', city, state, pincode || '', phone || '', email || '', gstin || '', manager || '');
+    `).run(name, code, address || '', city, state, pincode || '', cleanPhone, email || '', gstin || '', manager || '');
 
     logAudit(req.user.id, req.user.username, 'CREATE_STORE', info.lastInsertRowid, 'STORE', info.lastInsertRowid, { name, code, city }, req);
 
@@ -88,12 +96,20 @@ router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
   const storeId = parseInt(req.params.id);
   const { name, code, address, city, state, pincode, phone, email, gstin, manager, status } = req.body;
 
+  let cleanPhone = '';
+  if (phone) {
+    cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Store phone number must be exactly 10 digits.' });
+    }
+  }
+
   try {
     db.prepare(`
       UPDATE stores
       SET name = ?, code = ?, address = ?, city = ?, state = ?, pincode = ?, phone = ?, email = ?, gstin = ?, manager = ?, status = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(name, code, address, city, state, pincode, phone, email, gstin, manager, status || 'active', storeId);
+    `).run(name, code, address, city, state, pincode, cleanPhone, email, gstin, manager, status || 'active', storeId);
 
     logAudit(req.user.id, req.user.username, 'UPDATE_STORE', storeId, 'STORE', storeId, { name, code, status }, req);
 

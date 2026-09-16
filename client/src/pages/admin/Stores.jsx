@@ -80,13 +80,25 @@ export default function Stores() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (formData.phone) {
+      const cleanPhone = formData.phone.replace(/\D/g, '');
+      if (cleanPhone.length !== 10) {
+        alert('Store phone number must be exactly 10 digits.');
+        return;
+      }
+    }
+
     try {
       const url = editStore ? `/stores/${editStore.id}` : '/stores';
       const method = editStore ? 'PUT' : 'POST';
 
       const res = await apiFetch(url, {
         method,
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          phone: formData.phone ? formData.phone.replace(/\D/g, '').slice(0, 10) : ''
+        })
       });
 
       if (res.success) {
@@ -296,12 +308,14 @@ export default function Stores() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-bold text-slate-600 block mb-1">Phone</label>
+                  <label className="font-bold text-slate-600 block mb-1">Phone (10 Digits)</label>
                   <input
-                    type="text"
+                    type="tel"
+                    maxLength={10}
+                    placeholder="10-digit phone"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono"
                   />
                 </div>
                 <div>

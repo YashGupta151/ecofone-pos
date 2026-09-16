@@ -88,10 +88,22 @@ export default function Employees() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
+
+    if (formData.phone) {
+      const cleanPhone = formData.phone.replace(/\D/g, '');
+      if (cleanPhone.length !== 10) {
+        alert('Phone number must be exactly 10 digits.');
+        return;
+      }
+    }
+
     try {
       const res = await apiFetch('/employees', {
         method: 'POST',
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          phone: formData.phone ? formData.phone.replace(/\D/g, '').slice(0, 10) : ''
+        })
       });
       if (res.success) {
         setShowAddModal(false);
@@ -388,12 +400,14 @@ export default function Employees() {
                   />
                 </div>
                 <div>
-                  <label className="font-bold text-slate-600 block mb-1">Phone</label>
+                  <label className="font-bold text-slate-600 block mb-1">Phone (10 Digits)</label>
                   <input
                     type="tel"
+                    maxLength={10}
+                    placeholder="10-digit mobile"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg"
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono"
                   />
                 </div>
               </div>

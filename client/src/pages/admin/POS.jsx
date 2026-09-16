@@ -280,6 +280,12 @@ export default function POS() {
       return;
     }
 
+    const cleanPhone = customer.phone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      setError('Customer phone number must be exactly 10 digits.');
+      return;
+    }
+
     if (!cart.length) {
       setError('Cart is empty. Please select at least one smartphone.');
       return;
@@ -293,6 +299,13 @@ export default function POS() {
       if (!exchangeDevice.imei1.trim() || exchangeDevice.imei1.trim().length < 8) {
         setError('Please provide a valid Primary IMEI (min 8 characters) for the exchanged device.');
         return;
+      }
+      if (exchangeDevice.customer_id_proof_number) {
+        const cleanIdProof = exchangeDevice.customer_id_proof_number.replace(/\D/g, '');
+        if (cleanIdProof.length !== 12) {
+          setError('Customer ID proof number must be exactly 12 digits.');
+          return;
+        }
       }
       if (exchangeValueNum <= 0) {
         setError('Please enter an Agreed Exchange Value (valuation) greater than 0.');
@@ -587,10 +600,11 @@ export default function POS() {
                 <input
                   type="tel"
                   required
-                  placeholder="Phone Number *"
+                  maxLength={10}
+                  placeholder="10-digit Phone No *"
                   value={customer.phone}
-                  onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
+                  onChange={(e) => setCustomer({ ...customer, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium font-mono"
                 />
               </div>
               <div className="col-span-2">
@@ -1015,14 +1029,15 @@ export default function POS() {
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                        ID Proof Number
+                        ID Proof Number (12 Digits)
                       </label>
                       <input
                         type="text"
-                        placeholder="e.g. XXXX-XXXX-1234"
+                        maxLength={12}
+                        placeholder="12-digit ID number"
                         value={exchangeDevice.customer_id_proof_number}
-                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, customer_id_proof_number: e.target.value }))}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, customer_id_proof_number: e.target.value.replace(/\D/g, '').slice(0, 12) }))}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
                       />
                     </div>
                   </div>

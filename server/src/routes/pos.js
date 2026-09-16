@@ -191,13 +191,27 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ success: false, message: 'Selected store is currently inactive.' });
   }
 
+  const cleanPhone = (customer.phone || '').replace(/\D/g, '');
+  if (cleanPhone.length !== 10) {
+    return res.status(400).json({ success: false, message: 'Customer phone number must be exactly 10 digits.' });
+  }
+
+  const rawIdProof = exchange_device?.customer_id_proof_number || customer.id_proof_number || null;
+  let cleanIdProof = null;
+  if (rawIdProof) {
+    cleanIdProof = rawIdProof.replace(/\D/g, '');
+    if (cleanIdProof.length !== 12) {
+      return res.status(400).json({ success: false, message: 'Customer ID proof number must be exactly 12 digits.' });
+    }
+  }
+
   // Use a transactional execution
   const executeSale = db.transaction(() => {
     // 1. Resolve or Create Customer
     let customerId = customer.id;
     if (!customerId) {
       // Check by phone number first
-      const existingCustomer = db.prepare(`SELECT id FROM customers WHERE phone = ?`).get(customer.phone.trim());
+      const existingCustomer = db.prepare(`SELECT id FROM customers WHERE phone = ?`).get(cleanPhone);
       if (existingCustomer) {
         customerId = existingCustomer.id;
       } else {
@@ -209,7 +223,7 @@ router.post('/', authenticateToken, (req, res) => {
         `).run(
           custCode,
           customer.full_name.trim(),
-          customer.phone.trim(),
+          cleanPhone,
           customer.email || '',
           customer.address || '',
           customer.city || store.city,
@@ -217,14 +231,14 @@ router.post('/', authenticateToken, (req, res) => {
           customer.pincode || '',
           customer.gstin || null,
           customer.id_proof_type || exchange_device?.customer_id_proof_type || null,
-          customer.id_proof_number || exchange_device?.customer_id_proof_number || null
+          cleanIdProof
         );
         customerId = cRes.lastInsertRowid;
       }
     }
 
     // Update customer KYC / ID proof if supplied with exchange
-    if (customer.id_proof_type || customer.id_proof_number || exchange_device?.customer_id_proof_type || exchange_device?.customer_id_proof_number) {
+    if (customer.id_proof_type || cleanIdProof || exchange_device?.customer_id_proof_type) {
       db.prepare(`
         UPDATE customers
         SET id_proof_type = COALESCE(?, id_proof_type),
@@ -233,7 +247,7 @@ router.post('/', authenticateToken, (req, res) => {
         WHERE id = ?
       `).run(
         exchange_device?.customer_id_proof_type || customer.id_proof_type || null,
-        exchange_device?.customer_id_proof_number || customer.id_proof_number || null,
+        cleanIdProof,
         customerId
       );
     }
@@ -388,7 +402,7 @@ router.post('/', authenticateToken, (req, res) => {
         custRecord.email || customer.email || '',
         custRecord.address || customer.address || '',
         exchange_device.customer_id_proof_type || custRecord.id_proof_type || customer.id_proof_type || null,
-        exchange_device.customer_id_proof_number || custRecord.id_proof_number || customer.id_proof_number || null,
+        cleanIdProof || custRecord.id_proof_number || null,
         exchange_device.brand.trim(),
         exchange_device.model.trim(),
         exchange_device.variant ? exchange_device.variant.trim() : '',

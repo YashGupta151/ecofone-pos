@@ -96,9 +96,22 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ success: false, message: 'Full name and phone number are required.' });
   }
 
-  const existing = db.prepare(`SELECT id, full_name FROM customers WHERE phone = ?`).get(phone.trim());
+  const cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.length !== 10) {
+    return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits.' });
+  }
+
+  let cleanIdProof = null;
+  if (id_proof_number) {
+    cleanIdProof = id_proof_number.replace(/\D/g, '');
+    if (cleanIdProof.length !== 12) {
+      return res.status(400).json({ success: false, message: 'ID proof number must be exactly 12 digits.' });
+    }
+  }
+
+  const existing = db.prepare(`SELECT id, full_name FROM customers WHERE phone = ?`).get(cleanPhone);
   if (existing) {
-    return res.status(400).json({ success: false, message: `Customer with phone ${phone} already exists (${existing.full_name}).`, customerId: existing.id });
+    return res.status(400).json({ success: false, message: `Customer with phone ${cleanPhone} already exists (${existing.full_name}).`, customerId: existing.id });
   }
 
   const cCount = db.prepare(`SELECT COUNT(*) as cnt FROM customers`).get();
@@ -108,7 +121,7 @@ router.post('/', authenticateToken, (req, res) => {
     const resInsert = db.prepare(`
       INSERT INTO customers (customer_code, full_name, phone, email, address, city, state, pincode, gstin, id_proof_type, id_proof_number)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(customerCode, full_name.trim(), phone.trim(), email || '', address || '', city || '', state || '', pincode || '', gstin || null, id_proof_type || null, id_proof_number || null);
+    `).run(customerCode, full_name.trim(), cleanPhone, email || '', address || '', city || '', state || '', pincode || '', gstin || null, id_proof_type || null, cleanIdProof);
 
     res.status(201).json({
       success: true,

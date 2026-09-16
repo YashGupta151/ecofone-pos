@@ -74,6 +74,14 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
     return res.status(400).json({ success: false, message: 'Username, password, and full name are required.' });
   }
 
+  let cleanPhone = '';
+  if (phone) {
+    cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Employee phone number must be exactly 10 digits.' });
+    }
+  }
+
   try {
     const salt = bcrypt.genSaltSync(10);
     const hash = bcrypt.hashSync(password, salt);
@@ -84,7 +92,7 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
     const info = db.prepare(`
       INSERT INTO users (employee_id, username, password_hash, full_name, phone, email, address, role, assigned_store_id, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(generatedId, username.trim(), hash, full_name.trim(), phone || '', email || '', address || '', role || 'employee', assigned_store_id || null, initialStatus);
+    `).run(generatedId, username.trim(), hash, full_name.trim(), cleanPhone, email || '', address || '', role || 'employee', assigned_store_id || null, initialStatus);
 
     logAudit(req.user.id, req.user.username, 'CREATE_EMPLOYEE', assigned_store_id, 'USER', info.lastInsertRowid, { username, role, status: initialStatus }, req);
 
@@ -99,12 +107,20 @@ router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
   const id = parseInt(req.params.id);
   const { full_name, phone, email, address, role, assigned_store_id, status } = req.body;
 
+  let cleanPhone = '';
+  if (phone) {
+    cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Employee phone number must be exactly 10 digits.' });
+    }
+  }
+
   try {
     db.prepare(`
       UPDATE users
       SET full_name = ?, phone = ?, email = ?, address = ?, role = ?, assigned_store_id = ?, status = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(full_name, phone, email, address, role, assigned_store_id || null, status || 'active', id);
+    `).run(full_name, cleanPhone, email, address, role, assigned_store_id || null, status || 'active', id);
 
     logAudit(req.user.id, req.user.username, 'UPDATE_EMPLOYEE', assigned_store_id, 'USER', id, { full_name, role, status }, req);
 
