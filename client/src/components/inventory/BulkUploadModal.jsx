@@ -31,12 +31,25 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
 
   if (!isOpen) return null;
 
+  // Helper to parse numbers with currency symbols, commas, spaces
+  const cleanNumber = (val, defaultVal = 0) => {
+    if (val === null || val === undefined || val === '') return defaultVal;
+    if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
+    let str = String(val).trim().replace(/^(₹|rs\.?|inr|\$)\s*/i, '').replace(/,/g, '');
+    const match = str.match(/-?\d+(\.\d+)?/);
+    if (match) {
+      const num = parseFloat(match[0]);
+      return isNaN(num) ? defaultVal : num;
+    }
+    return defaultVal;
+  };
+
   // Key normalization dictionary
   const normalizeKeys = (row) => {
     const normalized = {};
-    for (const key of Object.keys(row)) {
-      const cleanKey = key.trim().toLowerCase().replace(/[\s_-]+/g, '');
-      const val = row[key];
+    for (const rawKey of Object.keys(row)) {
+      const cleanKey = rawKey.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const val = row[rawKey];
 
       if (cleanKey === 'brand' || cleanKey === 'make' || cleanKey === 'manufacturer') {
         normalized.brand = val;
@@ -58,28 +71,29 @@ export default function BulkUploadModal({ isOpen, onClose, stores = [], supplier
         normalized.serial_number = val;
       } else if (cleanKey === 'conditiongrade' || cleanKey === 'grade' || cleanKey === 'condition') {
         normalized.condition_grade = val;
-      } else if (cleanKey === 'batteryhealth' || cleanKey === 'battery' || cleanKey === 'battery%') {
+      } else if (cleanKey.includes('battery')) {
         normalized.battery_health = val;
-      } else if (cleanKey === 'purchaseprice' || cleanKey === 'cost' || cleanKey === 'buyingprice' || cleanKey === 'purchasecost') {
-        normalized.purchase_price = parseFloat(val) || 0;
-      } else if (cleanKey === 'refurbishmentcost' || cleanKey === 'refurbcost' || cleanKey === 'repaircost') {
-        normalized.refurbishment_cost = parseFloat(val) || 0;
-      } else if (cleanKey === 'additionalcost' || cleanKey === 'othercost') {
-        normalized.additional_cost = parseFloat(val) || 0;
-      } else if (cleanKey === 'sellingprice' || cleanKey === 'price' || cleanKey === 'retailprice' || cleanKey === 'mrp') {
-        normalized.selling_price = parseFloat(val) || 0;
+      } else if (cleanKey.includes('purchase') || cleanKey.includes('buying') || cleanKey === 'cost' || cleanKey === 'purchasecost') {
+        normalized.purchase_price = cleanNumber(val, 0);
+      } else if (cleanKey.includes('refurb')) {
+        normalized.refurbishment_cost = cleanNumber(val, 0);
+      } else if (cleanKey.includes('additional') || cleanKey.includes('othercost')) {
+        normalized.additional_cost = cleanNumber(val, 0);
+      } else if (cleanKey.includes('selling') || cleanKey.includes('sales') || cleanKey.includes('retail') || cleanKey === 'price' || cleanKey === 'mrp') {
+        normalized.selling_price = cleanNumber(val, 0);
       } else if (cleanKey === 'taxrate' || cleanKey === 'gst' || cleanKey === 'tax') {
-        normalized.tax_rate = parseFloat(val) || 18.0;
-      } else if (cleanKey === 'storecode' || cleanKey === 'store' || cleanKey === 'branch' || cleanKey === 'storeid') {
+        normalized.tax_rate = cleanNumber(val, 18.0);
+      } else if (cleanKey.includes('store') || cleanKey.includes('branch')) {
         normalized.store_code = val;
-      } else if (cleanKey === 'supplier' || cleanKey === 'supplierinfo' || cleanKey === 'suppliername' || cleanKey === 'vendor' || cleanKey === 'vendorname') {
+      } else if (cleanKey.includes('supplier') || cleanKey.includes('vendor')) {
         normalized.supplier_name = String(val).trim();
         normalized.supplier_info = String(val).trim();
       } else if (cleanKey === 'supplierid') {
         normalized.supplier_id = val;
-      } else if (cleanKey === 'warrantymonths' || cleanKey === 'warranty' || cleanKey === 'warrantyperiod') {
-        normalized.warranty_period_months = parseInt(val) || 6;
-      } else if (cleanKey === 'notes' || cleanKey === 'remark' || cleanKey === 'comments') {
+      } else if (cleanKey.includes('warranty')) {
+        const m = String(val).match(/\d+/);
+        normalized.warranty_period_months = m ? parseInt(m[0], 10) : 6;
+      } else if (cleanKey.includes('note') || cleanKey.includes('remark') || cleanKey.includes('comment')) {
         normalized.notes = val;
       } else {
         normalized[cleanKey] = val;

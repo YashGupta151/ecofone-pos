@@ -316,9 +316,17 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
         }
 
         // Pricing (strictly GST-inclusive)
-        const pInclusive = Math.max(0, parseFloat(item.purchase_price_inclusive || item.purchase_price || item.cost) || 0);
-        const sInclusive = Math.max(0, parseFloat(item.selling_price_inclusive || item.selling_price || item.price) || 0);
-        const mInclusive = Math.max(sInclusive, parseFloat(item.mrp_inclusive || item.mrp) || sInclusive);
+        const parsePrice = (v) => {
+          if (v === null || v === undefined || v === '') return 0;
+          if (typeof v === 'number') return isNaN(v) ? 0 : v;
+          let str = String(v).trim().replace(/^(₹|rs\.?|inr|\$)\s*/i, '').replace(/,/g, '');
+          const m = str.match(/-?\d+(\.\d+)?/);
+          return m ? parseFloat(m[0]) : 0;
+        };
+
+        const pInclusive = Math.max(0, parsePrice(item.purchase_price_inclusive ?? item.purchase_price ?? item.cost));
+        const sInclusive = Math.max(0, parsePrice(item.selling_price_inclusive ?? item.selling_price ?? item.price));
+        const mInclusive = Math.max(sInclusive, parsePrice(item.mrp_inclusive ?? item.mrp) || sInclusive);
 
         if (sInclusive <= 0) {
           failedRows.push({ row: rowNum, item: name, error: 'Selling price must be greater than ₹0' });

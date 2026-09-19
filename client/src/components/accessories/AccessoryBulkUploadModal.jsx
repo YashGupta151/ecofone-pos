@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Upload,
@@ -29,61 +29,196 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
   const [uploadResult, setUploadResult] = useState(null);
   const [parseError, setParseError] = useState('');
 
+  useEffect(() => {
+    if (stores && stores.length > 0) {
+      if (!targetStoreId || !stores.some(s => String(s.id) === String(targetStoreId))) {
+        setTargetStoreId(stores[0].id);
+      }
+    }
+  }, [stores, targetStoreId]);
+
   if (!isOpen) return null;
 
-  // Key normalization dictionary
+  // Helper to parse numbers with currency symbols, commas, spaces
+  const cleanNumber = (val, defaultVal = 0) => {
+    if (val === null || val === undefined || val === '') return defaultVal;
+    if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
+    let str = String(val).trim().replace(/^(₹|rs\.?|inr|\$)\s*/i, '').replace(/,/g, '');
+    const match = str.match(/-?\d+(\.\d+)?/);
+    if (match) {
+      const num = parseFloat(match[0]);
+      return isNaN(num) ? defaultVal : num;
+    }
+    return defaultVal;
+  };
+
+  const cleanInteger = (val, defaultVal = 0) => {
+    if (val === null || val === undefined || val === '') return defaultVal;
+    if (typeof val === 'number') return isNaN(val) ? defaultVal : Math.round(val);
+    let str = String(val).trim().replace(/,/g, '');
+    const match = str.match(/-?\d+/);
+    if (match) {
+      const num = parseInt(match[0], 10);
+      return isNaN(num) ? defaultVal : num;
+    }
+    return defaultVal;
+  };
+
+  // Key normalization dictionary (robust matching for any template or user header format)
   const normalizeKeys = (row) => {
     const normalized = {};
-    for (const key of Object.keys(row)) {
-      const cleanKey = key.trim().toLowerCase().replace(/[\s_\-()/.]+/g, '');
-      const val = row[key];
+    for (const rawKey of Object.keys(row)) {
+      const key = rawKey.trim();
+      const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const val = row[rawKey];
 
-      if (cleanKey === 'productname' || cleanKey === 'name' || cleanKey === 'accessoryname' || cleanKey === 'itemname' || cleanKey === 'title') {
+      // 1. Product Name
+      if (
+        cleanKey === 'productname' ||
+        cleanKey === 'name' ||
+        cleanKey === 'accessoryname' ||
+        cleanKey === 'itemname' ||
+        cleanKey === 'title' ||
+        cleanKey === 'product'
+      ) {
         normalized.name = val ? String(val).trim() : '';
-      } else if (cleanKey === 'category' || cleanKey === 'cat' || cleanKey === 'type' || cleanKey === 'productcategory') {
+      } 
+      // 2. Category
+      else if (
+        cleanKey === 'category' ||
+        cleanKey === 'cat' ||
+        cleanKey === 'type' ||
+        cleanKey === 'productcategory'
+      ) {
         normalized.category = val ? String(val).trim() : 'Chargers';
-      } else if (cleanKey === 'brand' || cleanKey === 'make' || cleanKey === 'manufacturer') {
+      } 
+      // 3. Brand
+      else if (
+        cleanKey === 'brand' ||
+        cleanKey === 'make' ||
+        cleanKey === 'manufacturer' ||
+        cleanKey === 'company'
+      ) {
         normalized.brand = val ? String(val).trim() : '';
-      } else if (cleanKey === 'variant' || cleanKey === 'model' || cleanKey === 'variantmodel' || cleanKey === 'color' || cleanKey === 'specification') {
+      } 
+      // 4. Variant / Model
+      else if (
+        cleanKey === 'variant' ||
+        cleanKey === 'model' ||
+        cleanKey === 'variantmodel' ||
+        cleanKey === 'color' ||
+        cleanKey === 'specification' ||
+        cleanKey === 'specs'
+      ) {
         normalized.variant = val ? String(val).trim() : '';
-      } else if (cleanKey === 'sku' || cleanKey === 'skucode' || cleanKey === 'productcode' || cleanKey === 'itemcode') {
-        normalized.sku = val ? String(val).trim().toUpperCase() : '';
-      } else if (cleanKey === 'barcode' || cleanKey === 'ean' || cleanKey === 'upc') {
-        normalized.barcode = val ? String(val).trim() : '';
-      } else if (cleanKey === 'quantity' || cleanKey === 'qty' || cleanKey === 'units' || cleanKey === 'stock') {
-        normalized.quantity = parseInt(val, 10) || 10;
-      } else if (
-        cleanKey === 'purchaseprice' ||
-        cleanKey === 'purchasepriceinclusive' ||
-        cleanKey === 'cost' ||
-        cleanKey === 'buyingprice' ||
-        cleanKey === 'purchasecost' ||
-        cleanKey === 'purchasecostinclusive'
+      } 
+      // 5. Quantity
+      else if (
+        cleanKey === 'quantity' ||
+        cleanKey === 'qty' ||
+        cleanKey === 'units' ||
+        cleanKey === 'stock' ||
+        cleanKey === 'stockqty' ||
+        cleanKey === 'openingstock' ||
+        cleanKey === 'initialstock'
       ) {
-        normalized.purchase_price_inclusive = parseFloat(val) || 0;
-      } else if (
+        normalized.quantity = cleanInteger(val, 10);
+      } 
+      // 6. Purchase Price (checked before general 'price')
+      else if (
+        cleanKey.includes('purchase') ||
+        cleanKey.includes('cost') ||
+        cleanKey.includes('buying') ||
+        cleanKey === 'pp' ||
+        cleanKey === 'purchaseprice'
+      ) {
+        normalized.purchase_price_inclusive = cleanNumber(val, 0);
+      } 
+      // 7. Selling Price
+      else if (
+        cleanKey.includes('selling') ||
+        cleanKey.includes('sales') ||
+        cleanKey.includes('retail') ||
+        cleanKey === 'sp' ||
         cleanKey === 'sellingprice' ||
-        cleanKey === 'sellingpriceinclusive' ||
         cleanKey === 'price' ||
-        cleanKey === 'retailprice' ||
-        cleanKey === 'salesprice'
+        cleanKey === 'rate'
       ) {
-        normalized.selling_price_inclusive = parseFloat(val) || 0;
-      } else if (cleanKey === 'mrp' || cleanKey === 'mrpinclusive' || cleanKey === 'listprice') {
-        normalized.mrp_inclusive = parseFloat(val) || 0;
-      } else if (cleanKey === 'minstock' || cleanKey === 'minimumstock' || cleanKey === 'min') {
-        normalized.minimum_stock = parseInt(val, 10) || 5;
-      } else if (cleanKey === 'reorderlevel' || cleanKey === 'reorder' || cleanKey === 'reorderqty') {
-        normalized.reorder_level = parseInt(val, 10) || 10;
-      } else if (cleanKey === 'warranty' || cleanKey === 'warrantyperiod' || cleanKey === 'warrantymonths') {
+        normalized.selling_price_inclusive = cleanNumber(val, 0);
+      } 
+      // 8. MRP
+      else if (
+        cleanKey.startsWith('mrp') ||
+        cleanKey.includes('listprice') ||
+        cleanKey.includes('maximumretailprice')
+      ) {
+        normalized.mrp_inclusive = cleanNumber(val, 0);
+      } 
+      // 9. SKU
+      else if (
+        cleanKey === 'sku' ||
+        cleanKey === 'skucode' ||
+        cleanKey === 'productcode' ||
+        cleanKey === 'itemcode' ||
+        cleanKey === 'code'
+      ) {
+        normalized.sku = val ? String(val).trim().toUpperCase() : '';
+      } 
+      // 10. Barcode / EAN
+      else if (
+        cleanKey.includes('barcode') ||
+        cleanKey === 'ean' ||
+        cleanKey === 'upc' ||
+        cleanKey === 'barcodeean'
+      ) {
+        normalized.barcode = val ? String(val).trim() : '';
+      } 
+      // 11. Minimum Stock
+      else if (
+        cleanKey.includes('minstock') ||
+        cleanKey.includes('minimumstock') ||
+        cleanKey === 'min' ||
+        cleanKey === 'minimumqty'
+      ) {
+        normalized.minimum_stock = cleanInteger(val, 5);
+      } 
+      // 12. Reorder Level
+      else if (
+        cleanKey.includes('reorder')
+      ) {
+        normalized.reorder_level = cleanInteger(val, 10);
+      } 
+      // 13. Warranty Period
+      else if (
+        cleanKey.includes('warranty')
+      ) {
         normalized.warranty_period = val ? String(val).trim() : '6 Months Brand Warranty';
-      } else if (cleanKey === 'storecode' || cleanKey === 'store' || cleanKey === 'branch' || cleanKey === 'storeid') {
+      } 
+      // 14. Store Code / Branch
+      else if (
+        cleanKey.includes('store') ||
+        cleanKey.includes('branch')
+      ) {
         normalized.store_code = val ? String(val).trim() : '';
-      } else if (cleanKey === 'supplier' || cleanKey === 'suppliername' || cleanKey === 'vendor' || cleanKey === 'vendorname') {
+      } 
+      // 15. Supplier Name
+      else if (
+        cleanKey.includes('supplier') ||
+        cleanKey.includes('vendor') ||
+        cleanKey.includes('distributor')
+      ) {
         normalized.supplier_name = val ? String(val).trim() : '';
-      } else if (cleanKey === 'description' || cleanKey === 'notes' || cleanKey === 'details' || cleanKey === 'remarks') {
+      } 
+      // 16. Description / Notes
+      else if (
+        cleanKey.includes('description') ||
+        cleanKey.includes('notes') ||
+        cleanKey.includes('remarks') ||
+        cleanKey.includes('details')
+      ) {
         normalized.description = val ? String(val).trim() : '';
-      } else {
+      } 
+      else {
         normalized[cleanKey] = val;
       }
     }
@@ -126,11 +261,11 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
           if (!norm.name) errors.push('Missing product name');
           if (!norm.brand) errors.push('Missing brand');
 
-          const sPrice = parseFloat(norm.selling_price_inclusive) || 0;
+          const sPrice = cleanNumber(norm.selling_price_inclusive, 0);
           if (sPrice <= 0) errors.push('Selling price must be > ₹0');
 
-          const pPrice = parseFloat(norm.purchase_price_inclusive) || 0;
-          const qty = parseInt(norm.quantity, 10) || 0;
+          const pPrice = cleanNumber(norm.purchase_price_inclusive, 0);
+          const qty = cleanInteger(norm.quantity, 10);
 
           // Compute 18% inclusive GST for preview
           const sellingTaxable = Math.round((sPrice * 100 / 118) * 100) / 100;
@@ -156,9 +291,9 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
             selling_price_inclusive: sPrice,
             selling_taxable_value: sellingTaxable,
             selling_gst: sellingGst,
-            mrp_inclusive: parseFloat(norm.mrp_inclusive) || sPrice,
-            minimum_stock: parseInt(norm.minimum_stock, 10) || 5,
-            reorder_level: parseInt(norm.reorder_level, 10) || 10,
+            mrp_inclusive: cleanNumber(norm.mrp_inclusive, sPrice),
+            minimum_stock: cleanInteger(norm.minimum_stock, 5),
+            reorder_level: cleanInteger(norm.reorder_level, 10),
             store_code: norm.store_code || '',
             supplier_name: norm.supplier_name || defaultSupplierName,
             warranty_period: norm.warranty_period || '6 Months Brand Warranty',
@@ -209,7 +344,7 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
         'MRP (Incl 18% GST)': 2499,
         'SKU': 'ECO-CHG-65W',
         'Barcode / EAN': '890123450001',
-        'Store Code': stores[0]?.code || 'MUM-BKC',
+        'Store Code': stores[0]?.code || 'MAIN-01',
         'Supplier Name': 'Apex Mobile Distribution Hub',
         'Minimum Stock': 5,
         'Reorder Level': 10,
@@ -227,7 +362,7 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
         'MRP (Incl 18% GST)': 1299,
         'SKU': 'APL-CBL-15M',
         'Barcode / EAN': '890123450002',
-        'Store Code': stores[0]?.code || 'MUM-BKC',
+        'Store Code': stores[0]?.code || 'MAIN-01',
         'Supplier Name': 'Apex Mobile Distribution Hub',
         'Minimum Stock': 10,
         'Reorder Level': 20,
@@ -245,7 +380,7 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
         'MRP (Incl 18% GST)': 3999,
         'SKU': 'ANK-PB-10K',
         'Barcode / EAN': '890123450003',
-        'Store Code': stores[0]?.code || 'MUM-BKC',
+        'Store Code': stores[0]?.code || 'MAIN-01',
         'Supplier Name': 'Nordic Devices India',
         'Minimum Stock': 3,
         'Reorder Level': 8,
@@ -263,7 +398,7 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
         'MRP (Incl 18% GST)': 699,
         'SKU': 'ECO-SCR-IP15',
         'Barcode / EAN': '890123450004',
-        'Store Code': stores[0]?.code || 'MUM-BKC',
+        'Store Code': stores[0]?.code || 'MAIN-01',
         'Supplier Name': 'Apex Mobile Distribution Hub',
         'Minimum Stock': 15,
         'Reorder Level': 30,
@@ -281,7 +416,7 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
         'MRP (Incl 18% GST)': 2990,
         'SKU': 'BOT-TWS-441',
         'Barcode / EAN': '890123450005',
-        'Store Code': stores[0]?.code || 'MUM-BKC',
+        'Store Code': stores[0]?.code || 'MAIN-01',
         'Supplier Name': 'Direct Wholesale',
         'Minimum Stock': 5,
         'Reorder Level': 10,
@@ -556,6 +691,7 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
                       <th className="py-2 px-3 text-right">Selling (Incl 18%)</th>
                       <th className="py-2 px-2.5 text-right">18% GST</th>
                       <th className="py-2 px-2.5">SKU / Code</th>
+                      <th className="py-2 px-2 text-center w-8"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -612,10 +748,20 @@ export default function AccessoryBulkUploadModal({ isOpen, onClose, stores = [],
                         <td className="py-2 px-2.5 font-mono text-[10px] text-slate-500">
                           {r.sku || '<Auto>'}
                         </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      <td className="py-2 px-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setParsedRows(prev => prev.filter((item) => item._index !== r._index))}
+                          className="p-1 text-slate-300 hover:text-rose-600 rounded transition"
+                          title="Discard row"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
               </div>
             </div>
           )}
