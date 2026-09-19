@@ -10,7 +10,7 @@ The application is pre-configured with a unified single-port architecture: the N
 ## 🚀 Quick Start on Linux Server (Ubuntu / Debian / CentOS)
 
 ### 1. Prerequisites
-Ensure **Node.js v20.x** and **npm** are installed:
+Ensure **Node.js 20** and **npm** are installed:
 ```bash
 # Check installed versions
 node -v
@@ -25,7 +25,7 @@ The repository pins the expected runtime in `.nvmrc` and the package `engines` f
 ```bash
 nvm install 20
 nvm use 20
-node -v  # should report v20.x
+node -v  # should report v20
 ```
 
 ---

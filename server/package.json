@@ -4,7 +4,7 @@
   "description": "Ecofone Multi-Store POS, Inventory & Business Management System - Backend",
   "main": "src/index.js",
   "engines": {
-    "node": "20.x"
+    "node": "20"
   },
   "scripts": {
     "start": "npm --prefix .. start",

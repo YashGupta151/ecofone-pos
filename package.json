@@ -4,7 +4,7 @@
   "description": "Ecofone Multi-Store POS, Inventory & Business Management System",
   "private": true,
   "engines": {
-    "node": "20.x"
+    "node": "20"
   },
   "scripts": {
     "build": "npm --prefix client ci --include=dev && npm --prefix client run build && npm rebuild better-sqlite3",

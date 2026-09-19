@@ -46,7 +46,7 @@
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) v20.x LTS (Strictly Required: Node.js 20)
+- [Node.js](https://nodejs.org/) 20 LTS (Strictly Required: Node.js 20 only)
 - npm v10+
 
 ### 1. Clone the repository
