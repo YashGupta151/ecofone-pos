@@ -338,7 +338,6 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                         <th className="py-1.5 px-1.5 text-center w-8">Qty</th>
                         <th className="py-1.5 px-1.5 text-right w-20">Unit Price</th>
                         <th className="py-1.5 px-1.5 text-right w-14">Disc.</th>
-                        <th className="py-1.5 px-1.5 text-right w-20">Taxable</th>
                         <th className="py-1.5 px-1.5 text-right w-16">GST</th>
                         <th className="py-1.5 px-1.5 text-right w-20">Total</th>
                       </tr>
@@ -408,16 +407,10 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                                 <span className="text-slate-400">₹0</span>
                               )}
                             </td>
-                            <td className="py-1.5 px-1.5 text-right font-medium text-slate-800 text-xs">
-                              <div>{formatCurrency(item.taxable_amount)}</div>
-                              <div className="text-[7.5px] text-slate-400">
-                                {isAccessory ? 'Taxable Val' : 'Margin Diff'}
-                              </div>
-                            </td>
                             <td className="py-1.5 px-1.5 text-right text-slate-600 text-xs">
                               <div className="font-semibold text-emerald-800">+{formatCurrency(item.total_tax)}</div>
                               <div className="text-[7.5px] text-slate-400">
-                                {isAccessory ? '(18% Incl.)' : `(${item.tax_rate || 5}% Diff)`}
+                                {isAccessory ? '(18% Incl.)' : `(${item.tax_rate || 5}%)`}
                               </div>
                             </td>
                             <td className="py-1.5 px-1.5 text-right font-bold text-slate-900 text-xs">
