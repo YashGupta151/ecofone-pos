@@ -7,8 +7,9 @@
     "node": "20.x"
   },
   "scripts": {
-    "build": "cd client && npm install && npm run build",
-    "start": "node server/src/index.js",
+    "build": "npm --prefix client ci --include=dev && npm --prefix client run build",
+    "ensure-build": "test -f client/dist/index.html || npm run build",
+    "start": "npm run ensure-build && node server/src/index.js",
     "seed": "node server/src/db/seed.js",
     "rebuild": "npm rebuild better-sqlite3"
   },

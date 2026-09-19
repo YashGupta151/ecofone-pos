@@ -7,7 +7,7 @@
     "node": "20.x"
   },
   "scripts": {
-    "start": "node src/index.js",
+    "start": "npm --prefix .. start",
     "dev": "node --watch src/index.js",
     "seed": "node src/db/seed.js",
     "export-mysql": "node src/db/export_mysql.js"
