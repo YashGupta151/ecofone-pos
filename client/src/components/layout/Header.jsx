@@ -121,7 +121,7 @@ export default function Header({ toggleSidebar, isSidebarOpen }) {
               <div className="text-[10px] text-slate-500 font-medium capitalize mt-0.5 flex items-center gap-1">
                 {isAdmin ? (
                   <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
-                    <ShieldCheck className="w-3 h-3" /> CEO / Admin
+                    <ShieldCheck className="w-3 h-3" /> {user?.full_name?.includes('Gaurav') ? 'CEO' : 'Super Admin'}
                   </span>
                 ) : (
                   <span>Store Employee</span>

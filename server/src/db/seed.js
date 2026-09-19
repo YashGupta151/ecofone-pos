@@ -112,15 +112,29 @@ function seedDatabase() {
   const adminPassHash = bcrypt.hashSync(adminPassword, salt);
   const empPassHash = bcrypt.hashSync(empPassword, salt);
 
-  // CEO / Super Admin
+  // 1. Super Admin: Shubham Chauhan
   userStmt.run(
-    'ECO-EMP-000',
+    'ECO-ADM-001',
     adminUsername,
     adminPassHash,
-    'Aman Singhania (CEO)',
+    'Shubham Chauhan',
+    '+91 98200 88888',
+    'shubham@ecofone.in',
+    'Ecofone Central HQ, Mumbai',
+    'admin',
+    null,
+    'active'
+  );
+
+  // 2. CEO: Gaurav Shrivastava
+  userStmt.run(
+    'ECO-CEO-001',
+    'gaurav',
+    adminPassHash,
+    'Gaurav Shrivastava',
     '+91 98200 99999',
-    'ceo@ecofone.in',
-    'Ecofone Headquarters, Mumbai',
+    'gaurav@ecofone.in',
+    'Ecofone Central HQ, Mumbai',
     'admin',
     null,
     'active'

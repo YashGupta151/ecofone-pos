@@ -109,11 +109,11 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
             <div className="text-xs truncate font-medium text-slate-300">
-              {isAdmin ? 'Super Admin / CEO' : user?.store_code || 'Store Employee'}
+              {isAdmin ? (user?.full_name?.includes('Gaurav') ? 'CEO' : 'Super Admin') : user?.store_code || 'Store Employee'}
             </div>
           </div>
-          <div className="text-[11px] text-slate-500 truncate mt-0.5">
-            {isAdmin ? 'All 12 Outlets Connected' : user?.store_name}
+          <div className="text-[11px] text-slate-400 truncate mt-0.5">
+            {user?.full_name || (isAdmin ? 'Central Administration' : user?.store_name)}
           </div>
         </div>
 
