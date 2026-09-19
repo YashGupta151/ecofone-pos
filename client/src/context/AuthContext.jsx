@@ -54,8 +54,38 @@ export function AuthProvider({ children }) {
     window.location.href = '/login';
   }
 
+  // Permission verification helpers
+  function canAccess(moduleKey) {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    if (!moduleKey) return true;
+    if (!user.permissions) return true; // default full access if not explicitly restricted
+    const perm = user.permissions[moduleKey];
+    if (!perm) return true;
+    return perm.view !== false;
+  }
+
+  function canEdit(moduleKey) {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    if (!moduleKey) return true;
+    if (!user.permissions) return true;
+    const perm = user.permissions[moduleKey];
+    if (!perm) return true;
+    return perm.edit !== false && perm.view !== false;
+  }
+
   return (
-    <AuthContext.Provider value={{ user, setUser, login, logout, loading, isAdmin: user?.role === 'admin' }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      setUser, 
+      login, 
+      logout, 
+      loading, 
+      isAdmin: user?.role === 'admin',
+      canAccess,
+      canEdit
+    }}>
       {children}
     </AuthContext.Provider>
   );

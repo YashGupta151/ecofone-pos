@@ -157,8 +157,14 @@ export default function Purchases() {
         if (!imei) {
           throw new Error(`Device #${i + 1} is missing IMEI 1.`);
         }
-        if (imei.length < 14) {
-          throw new Error(`Device #${i + 1} IMEI 1 ("${imei}") must be 14-15 digits.`);
+        if (!/^\d{15}$/.test(imei)) {
+          throw new Error(`Device #${i + 1} Primary IMEI 1 ("${imei}") must be exactly 15 numeric digits.`);
+        }
+        if (ph.imei2 && ph.imei2.trim()) {
+          const imei2 = ph.imei2.trim();
+          if (!/^\d{15}$/.test(imei2)) {
+            throw new Error(`Device #${i + 1} Secondary IMEI 2 ("${imei2}") must be exactly 15 numeric digits.`);
+          }
         }
         if (imeiSet.has(imei)) {
           throw new Error(`Duplicate IMEI 1 ("${imei}") found within this batch.`);
@@ -455,6 +461,8 @@ export default function Purchases() {
                       <input
                         type="text"
                         required
+                        inputMode="numeric"
+                        maxLength={15}
                         placeholder="15-digit unique IMEI"
                         value={phone.imei1}
                         onChange={(e) => updatePhoneField(idx, 'imei1', e.target.value.replace(/\D/g, '').slice(0, 15))}
@@ -462,10 +470,19 @@ export default function Purchases() {
                       />
                     </div>
                     <div>
-                      <label className="text-slate-500 block mb-0.5">Secondary IMEI 2</label>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label className="text-slate-500 block">Secondary IMEI 2</label>
+                        {phone.imei2 && (
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {phone.imei2.length}/15 digits
+                          </span>
+                        )}
+                      </div>
                       <input
                         type="text"
-                        placeholder="Optional second IMEI"
+                        inputMode="numeric"
+                        maxLength={15}
+                        placeholder="Optional second IMEI (15 digits)"
                         value={phone.imei2}
                         onChange={(e) => updatePhoneField(idx, 'imei2', e.target.value.replace(/\D/g, '').slice(0, 15))}
                         className="w-full px-2.5 py-1.5 bg-white border rounded font-mono"

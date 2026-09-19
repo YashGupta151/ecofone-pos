@@ -56,7 +56,8 @@ router.post('/login', (req, res) => {
       store_city: user.store_city,
       store_state: user.store_state,
       email: user.email,
-      phone: user.phone
+      phone: user.phone,
+      permissions: db.parseUserPermissions(user.permissions, user.role)
     }
   });
 });

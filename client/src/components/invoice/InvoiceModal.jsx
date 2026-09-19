@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Printer, X, CheckCircle, Smartphone, Building, User, Receipt, Phone, Mail, FileText, Check } from 'lucide-react';
 import { formatCurrency, formatDate, formatDateTime, numberToWordsINR } from '../../utils/formatters';
 
@@ -8,32 +9,17 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
   if (!invoiceData) return null;
   const { sale, items = [], payments = [], exchange, company = {} } = invoiceData;
 
-  // Calculate dynamic GST rates based on actual invoice items/sale values
-  const rawItemTax = items[0]?.tax_rate;
-  let cachedCompanyTax = null;
-  try {
-    const saved = localStorage.getItem('ecofone_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.default_tax_rate !== undefined && parsed.default_tax_rate !== '') {
-        cachedCompanyTax = parseFloat(parsed.default_tax_rate);
-      }
-    }
-  } catch (e) {}
+  // Split items into phones and accessories for precise tax & margin breakdown
+  const phoneItems = items.filter(i => i.item_type !== 'accessory' && !i.accessory_id);
+  const accessoryItems = items.filter(i => i.item_type === 'accessory' || i.accessory_id);
+  const hasPhones = phoneItems.length > 0;
+  const hasAccessories = accessoryItems.length > 0;
 
-  const companyTax = (company?.default_tax_rate !== undefined && company?.default_tax_rate !== null)
-    ? company.default_tax_rate
-    : cachedCompanyTax;
+  const phoneMargin = phoneItems.reduce((acc, i) => acc + (parseFloat(i.taxable_amount) || 0), 0);
+  const phoneTax = phoneItems.reduce((acc, i) => acc + (parseFloat(i.total_tax) || 0), 0);
 
-  const totalTaxRate = (sale?.taxable_amount > 0 && typeof sale?.total_tax === 'number')
-    ? Math.round(((sale.total_tax / sale.taxable_amount) * 100) * 10) / 10
-    : (rawItemTax !== undefined && rawItemTax !== null && !isNaN(parseFloat(rawItemTax))
-        ? parseFloat(rawItemTax)
-        : (companyTax !== undefined && companyTax !== null && !isNaN(parseFloat(companyTax))
-            ? parseFloat(companyTax)
-            : 5));
-  const halfTaxRate = (totalTaxRate / 2).toFixed(1).replace(/\.0$/, '');
-  const fullTaxRate = totalTaxRate.toString().replace(/\.0$/, '');
+  const accessoryTaxable = accessoryItems.reduce((acc, i) => acc + (parseFloat(i.taxable_amount) || 0), 0);
+  const accessoryTax = accessoryItems.reduce((acc, i) => acc + (parseFloat(i.total_tax) || 0), 0);
 
   const handlePrint = (format) => {
     setPrintFormat(format);
@@ -42,12 +28,17 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
     }, 150);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 invoice-modal-backdrop">
+  const modalContent = (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 invoice-modal-backdrop print:p-0 print:m-0 print:static print:bg-white print:overflow-visible">
       {/* Injected @page dynamic rule for perfect margins */}
       {printFormat === 'a4' ? (
         <style type="text/css" media="print">
-          {`@page { size: A4 portrait; margin: 10mm 12mm; }`}
+          {`
+            @page { 
+              size: A4 portrait; 
+              margin: 6mm 8mm; 
+            }
+          `}
         </style>
       ) : (
         <style type="text/css" media="print">
@@ -55,7 +46,7 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
         </style>
       )}
 
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150 invoice-modal-dialog">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150 invoice-modal-dialog print:shadow-none print:border-none print:max-w-none print:max-h-none print:overflow-visible print:rounded-none">
         
         {/* Modal Top Bar (Hidden during print) */}
         <div className="px-6 py-3.5 bg-slate-900 text-white flex items-center justify-between no-print">
@@ -110,12 +101,12 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
         </div>
 
         {/* Scrollable Bill Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-50/50 invoice-modal-content">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-50/50 invoice-modal-content print:p-0 print:m-0 print:bg-white print:overflow-visible">
           
           {/* Printable Invoice Container */}
           <div 
             id="printable-invoice" 
-            className={`bg-white mx-auto ${
+            className={`bg-white mx-auto print:border-none print:shadow-none print:p-0 print:m-0 ${
               printFormat === 'thermal' 
                 ? 'thermal-receipt-container max-w-[340px] p-4 border border-slate-300 rounded-xl shadow-xs' 
                 : 'a4-invoice-container max-w-3xl p-6 sm:p-8 border border-slate-200 rounded-2xl shadow-xs'
@@ -158,22 +149,37 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
 
                 {/* Items */}
                 <div className="py-2 border-b border-dashed border-slate-400 space-y-2 text-[10px]">
-                  {items.map((item, idx) => (
-                    <div key={idx} className="space-y-0.5">
-                      <div className="font-bold">{item.brand} {item.model} ({item.variant})</div>
-                      <div className="text-[9px] text-slate-600">IMEI: {item.imei1}</div>
-                      <div className="flex justify-between">
-                        <span>Grade: {item.condition_grade}</span>
-                        <span className="font-bold">{formatCurrency(item.final_price)}</span>
-                      </div>
-                      {item.discount > 0 && (
-                        <div className="flex justify-between text-[9px] text-rose-600">
-                          <span>Discount ({item.selling_price > 0 ? ((item.discount / item.selling_price) * 100).toFixed(1).replace(/\.0$/, '') : 0}%):</span>
-                          <span>-{formatCurrency(item.discount)}</span>
+                  {items.map((item, idx) => {
+                    const isAccessory = item.item_type === 'accessory' || item.accessory_id;
+                    return (
+                      <div key={idx} className="space-y-0.5">
+                        <div className="font-bold flex justify-between items-start">
+                          <span>{item.brand ? `${item.brand} ` : ''}{item.model} {item.variant ? `(${item.variant})` : ''}</span>
+                          {isAccessory && <span className="text-[8px] font-semibold bg-emerald-100 text-emerald-800 px-1 rounded ml-1">NEW</span>}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        {isAccessory ? (
+                          <div className="text-[9px] text-slate-600 flex justify-between">
+                            <span>Qty: {item.quantity || 1} × {formatCurrency(item.selling_price)} (Incl. 18% GST)</span>
+                            <span className="font-bold text-slate-900">{formatCurrency(item.final_price)}</span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-[9px] text-slate-600">IMEI: {item.imei1}</div>
+                            <div className="flex justify-between">
+                              <span>Grade: {item.condition_grade}</span>
+                              <span className="font-bold text-slate-900">{formatCurrency(item.final_price)}</span>
+                            </div>
+                          </>
+                        )}
+                        {item.discount > 0 && (
+                          <div className="flex justify-between text-[9px] text-rose-600">
+                            <span>Discount:</span>
+                            <span>-{formatCurrency(item.discount)}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Financials */}
@@ -182,36 +188,36 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     <span>Subtotal:</span>
                     <span>{formatCurrency(sale?.subtotal)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Taxable Diff (Margin):</span>
-                    <span>{formatCurrency(sale?.taxable_amount)}</span>
-                  </div>
-                  {sale?.cgst > 0 && (
+                  {phoneMargin > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>CGST ({halfTaxRate}% on Diff):</span>
-                      <span>{formatCurrency(sale.cgst)}</span>
+                      <span>Phone Margin (Diff):</span>
+                      <span>{formatCurrency(phoneMargin)}</span>
                     </div>
                   )}
-                  {sale?.sgst > 0 && (
-                    <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>SGST ({halfTaxRate}% on Diff):</span>
-                      <span>{formatCurrency(sale.sgst)}</span>
+                  {phoneTax > 0 && (
+                    <div className="flex justify-between text-[9px] text-emerald-700">
+                      <span>GST (5% on Margin):</span>
+                      <span>+{formatCurrency(phoneTax)}</span>
                     </div>
                   )}
-                  {sale?.igst > 0 && (
+                  {accessoryTaxable > 0 && (
                     <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>IGST ({fullTaxRate}% on Diff):</span>
-                      <span>{formatCurrency(sale.igst)}</span>
+                      <span>Accessory Taxable Val:</span>
+                      <span>{formatCurrency(accessoryTaxable)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-[9px] text-slate-700 font-semibold">
-                    <span>Total GST (5% on Diff):</span>
-                    <span>+{formatCurrency(sale?.total_tax)}</span>
-                  </div>
-                  <div className="flex justify-between text-[9px] text-slate-700">
-                    <span>Total (Items + GST):</span>
-                    <span>{formatCurrency((sale?.subtotal || 0) + (sale?.total_tax || 0))}</span>
-                  </div>
+                  {accessoryTax > 0 && (
+                    <div className="flex justify-between text-[9px] text-emerald-700">
+                      <span>GST (18% Incl. in Acc):</span>
+                      <span>{formatCurrency(accessoryTax)}</span>
+                    </div>
+                  )}
+                  {sale?.total_tax > 0 && (
+                    <div className="flex justify-between text-[9px] text-slate-700 font-semibold pt-0.5 border-t border-dotted border-slate-300">
+                      <span>Total GST:</span>
+                      <span>+{formatCurrency(sale?.total_tax)}</span>
+                    </div>
+                  )}
                   {sale?.discount_total > 0 && (
                     <div className="flex justify-between text-rose-600 font-semibold">
                       <span>Discount (on Total):</span>
@@ -246,75 +252,82 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                 </div>
 
                 <div className="pt-2 text-center text-[9px] text-slate-600 space-y-1">
-                  <p className="font-bold text-slate-800">6 MONTHS ECOFONE CERTIFIED WARRANTY</p>
-                  <p>Original tax invoice required for warranty claims.</p>
-                  <p className="pt-1 font-semibold text-slate-800">Thank you for visiting Ecofone!</p>
+                  {hasPhones ? (
+                    <p className="font-bold text-slate-800">6 MONTHS ECOFONE CERTIFIED WARRANTY</p>
+                  ) : (
+                    <p className="font-bold text-slate-800">BRAND NEW 100% GENUINE ACCESSORIES</p>
+                  )}
+                  <p className="text-[8px] text-slate-500">
+                    {hasAccessories && 'Acc. prices include 18% GST. '}
+                    {hasPhones && 'Phones taxed under Rule 32(5) Margin Scheme.'}
+                  </p>
+                  <p className="pt-0.5 font-semibold text-slate-800">Thank you for visiting Ecofone!</p>
                   <p className="text-[10px] font-bold">www.ecofone.in</p>
                 </div>
               </div>
             ) : (
-              /* ================= FULL A4 TAX INVOICE LAYOUT ================= */
-              <div className="space-y-4 text-slate-800">
+              /* ================= FULL A4 TAX INVOICE LAYOUT (STRICT SINGLE PAGE) ================= */
+              <div className="space-y-2.5 print:space-y-1.5 text-slate-800 text-xs a4-invoice-container">
                 
                 {/* Header: Branding & Store info */}
-                <div className="flex items-start justify-between border-b-2 border-slate-300 pb-4 print-avoid-break">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-14 h-14 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-xs shrink-0">
+                <div className="flex items-start justify-between border-b border-slate-300 pb-2.5 print:pb-1.5 print-avoid-break">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 print:w-10 print:h-10 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-xs shrink-0">
                       <img src="/logo.png" alt="Ecofone Logo" className="w-full h-full object-contain" />
                     </div>
                     <div>
-                      <h1 className="text-xl font-black tracking-tight text-slate-900 leading-tight">
+                      <h1 className="text-lg print:text-base font-black tracking-tight text-slate-900 leading-tight">
                         {company.company_name || 'Ecofone'}
                       </h1>
-                      <p className="text-xs font-bold text-amber-600">
+                      <p className="text-[11px] print:text-[10px] font-bold text-amber-600">
                         {company.company_tagline || 'Luxury within reach'}
                       </p>
-                      <p className="text-[11px] text-slate-600 max-w-md mt-0.5 leading-snug">
+                      <p className="text-[10px] print:text-[9.5px] text-slate-600 max-w-md mt-0.5 leading-snug">
                         {sale?.store_address ? `${sale.store_address}, ${sale.store_city}` : company.company_address}
                       </p>
-                      <p className="text-[11px] text-slate-700 mt-0.5">
+                      <p className="text-[10px] print:text-[9.5px] text-slate-700 mt-0.5">
                         GSTIN: <span className="font-bold text-slate-900">{sale?.store_gstin || company.company_gstin}</span>
                       </p>
                     </div>
                   </div>
 
                   <div className="text-right shrink-0">
-                    <div className="inline-block px-3 py-1 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-md text-xs font-black uppercase tracking-wider">
+                    <div className="inline-block px-2.5 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded text-[11px] font-black uppercase tracking-wider">
                       TAX INVOICE
                     </div>
-                    <div className="text-xs font-bold text-slate-900 mt-2">
+                    <div className="text-[11px] font-bold text-slate-900 mt-1">
                       Invoice #: <span className="font-mono text-emerald-800 font-extrabold">{sale?.invoice_number}</span>
                     </div>
-                    <div className="text-[11px] text-slate-600 mt-0.5">
-                      Date & Time: <span className="font-medium text-slate-900">{formatDateTime(sale?.sale_date)}</span>
+                    <div className="text-[10px] text-slate-600 mt-0.5">
+                      Date: <span className="font-medium text-slate-900">{formatDateTime(sale?.sale_date)}</span>
                     </div>
-                    <div className="text-[11px] text-slate-600">
+                    <div className="text-[10px] text-slate-600">
                       Store: <span className="font-semibold text-slate-900">{sale?.store_name} ({sale?.store_code})</span>
                     </div>
-                    <div className="text-[11px] text-slate-600">
+                    <div className="text-[10px] text-slate-600">
                       Cashier: <span className="font-medium text-slate-900">{sale?.employee_name}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Customer Details & Payment Box (No Negative Margin) */}
-                <div className="grid grid-cols-2 gap-4 p-3.5 border border-slate-200 rounded-xl bg-slate-50/80 text-xs print-avoid-break">
+                {/* Customer Details & Payment Box */}
+                <div className="grid grid-cols-2 gap-3 p-2.5 print:p-2 border border-slate-200 rounded-xl bg-slate-50/80 text-[11px] print-avoid-break">
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Billed To (Customer):</span>
-                    <span className="font-bold text-slate-900 block text-sm mt-0.5">{sale?.customer_name}</span>
+                    <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 block">Billed To (Customer):</span>
+                    <span className="font-bold text-slate-900 block text-xs mt-0.5">{sale?.customer_name}</span>
                     <span className="text-slate-700 block mt-0.5">Phone: <strong>{sale?.customer_phone}</strong></span>
-                    {sale?.customer_email && <span className="text-slate-600 block">Email: {sale.customer_email}</span>}
-                    {sale?.customer_address && <span className="text-slate-600 block">Address: {sale.customer_address}</span>}
+                    {sale?.customer_email && <span className="text-slate-600 block text-[10px]">Email: {sale.customer_email}</span>}
+                    {sale?.customer_address && <span className="text-slate-600 block text-[10px]">Address: {sale.customer_address}</span>}
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Payment Details:</span>
+                    <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 block">Payment Details:</span>
                     <span className="text-slate-700 block mt-0.5">
                       Mode: <strong className="text-slate-900 uppercase">{payments[0]?.payment_method || 'Cash'}</strong>
                     </span>
                     {payments[0]?.reference_number && (
-                      <span className="text-slate-600 block text-[11px] font-mono">Ref/Txn: {payments[0].reference_number}</span>
+                      <span className="text-slate-600 block text-[10px] font-mono">Ref/Txn: {payments[0].reference_number}</span>
                     )}
-                    <span className="inline-block mt-1 px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-[10px]">
+                    <span className="inline-block mt-0.5 px-2 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-[9px]">
                       STATUS: FULLY PAID
                     </span>
                   </div>
@@ -324,150 +337,189 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                 <div className="print-avoid-break overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="border-b-2 border-slate-300 bg-slate-100 text-slate-700 uppercase text-[10px] tracking-wider font-bold">
-                        <th className="py-2 px-2 text-center w-8">#</th>
-                        <th className="py-2 px-2">Item Description & IMEI</th>
-                        <th className="py-2 px-2 text-center w-20">Condition</th>
-                        <th className="py-2 px-2 text-right w-20">Price</th>
-                        <th className="py-2 px-2 text-right w-16">Disc.</th>
-                        <th className="py-2 px-2 text-right w-20">Margin (Diff)</th>
-                        <th className="py-2 px-2 text-right w-20">GST (5%)</th>
-                        <th className="py-2 px-2 text-right w-24">Total</th>
+                      <tr className="border-b border-slate-300 bg-slate-100 text-slate-700 uppercase text-[9.5px] tracking-wider font-bold">
+                        <th className="py-1.5 px-1.5 text-center w-7">#</th>
+                        <th className="py-1.5 px-1.5">Item Description & Details</th>
+                        <th className="py-1.5 px-1.5 text-center w-20">Condition</th>
+                        <th className="py-1.5 px-1.5 text-center w-8">Qty</th>
+                        <th className="py-1.5 px-1.5 text-right w-20">Unit Price</th>
+                        <th className="py-1.5 px-1.5 text-right w-14">Disc.</th>
+                        <th className="py-1.5 px-1.5 text-right w-20">Taxable</th>
+                        <th className="py-1.5 px-1.5 text-right w-16">GST</th>
+                        <th className="py-1.5 px-1.5 text-right w-20">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {items.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50">
-                          <td className="py-2.5 px-2 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                          <td className="py-2.5 px-2">
-                            <div className="font-bold text-slate-900 text-xs">
-                              {item.brand} {item.model}
-                            </div>
-                            <div className="text-[10px] text-slate-600">
-                              {item.variant} {item.color ? `• ${item.color}` : ''}
-                            </div>
-                            <div className="text-[10px] font-mono text-emerald-800 font-bold mt-0.5">
-                              IMEI 1: {item.imei1}
-                            </div>
-                            <div className="text-[9px] text-slate-500">
-                              Warranty: 6 Months Ecofone Certified
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-2 text-center">
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[10px] border border-slate-200 inline-block">
-                              {item.condition_grade}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-2 text-right font-medium text-slate-700">
-                            {formatCurrency(item.selling_price)}
-                          </td>
-                          <td className="py-2.5 px-2 text-right font-medium">
-                            {item.discount > 0 ? (
-                              <div>
-                                <div className="text-rose-600 font-bold">-{formatCurrency(item.discount)}</div>
-                                <div className="text-[10px] text-slate-500 font-semibold">
-                                  ({item.selling_price > 0 ? ((item.discount / item.selling_price) * 100).toFixed(1).replace(/\.0$/, '') : 0}%)
+                      {items.map((item, idx) => {
+                        const isAccessory = item.item_type === 'accessory' || item.accessory_id;
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="py-1.5 px-1.5 text-center text-slate-400 font-mono text-[10px]">{idx + 1}</td>
+                            <td className="py-1.5 px-1.5">
+                              {isAccessory ? (
+                                <>
+                                  <div className="font-bold text-slate-900 text-xs">
+                                    {item.brand ? `${item.brand} ` : ''}{item.model}
+                                  </div>
+                                  <div className="text-[9.5px] text-slate-600">
+                                    {item.accessory_category || item.category || 'Accessory'} {item.variant ? `• ${item.variant}` : ''}
+                                  </div>
+                                  <div className="text-[8.5px] text-emerald-700 font-semibold">
+                                    Brand New • 18% GST Incl.
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="font-bold text-slate-900 text-xs">
+                                    {item.brand} {item.model}
+                                  </div>
+                                  <div className="text-[9.5px] text-slate-600">
+                                    {item.variant} {item.color ? `• ${item.color}` : ''}
+                                  </div>
+                                  <div className="text-[9.5px] font-mono text-emerald-800 font-bold">
+                                    IMEI 1: {item.imei1}
+                                  </div>
+                                  <div className="text-[8.5px] text-slate-500">
+                                    Warranty: 6 Months Ecofone Certified
+                                  </div>
+                                </>
+                              )}
+                            </td>
+                            <td className="py-1.5 px-1.5 text-center">
+                              {isAccessory ? (
+                                <span className="px-1 py-0.2 rounded bg-emerald-50 text-emerald-800 font-bold text-[9px] border border-emerald-200 inline-block">
+                                  Brand New
+                                </span>
+                              ) : (
+                                <span className="px-1 py-0.2 rounded bg-slate-100 text-slate-700 font-semibold text-[9px] border border-slate-200 inline-block">
+                                  {item.condition_grade}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-1.5 px-1.5 text-center font-bold text-slate-800 text-xs">
+                              {isAccessory ? (item.quantity || 1) : 1}
+                            </td>
+                            <td className="py-1.5 px-1.5 text-right font-medium text-slate-700 text-xs">
+                              <div>{formatCurrency(item.selling_price)}</div>
+                              {isAccessory && (
+                                <div className="text-[7.5px] text-slate-400 font-medium">(Incl. GST)</div>
+                              )}
+                            </td>
+                            <td className="py-1.5 px-1.5 text-right font-medium text-xs">
+                              {item.discount > 0 ? (
+                                <div>
+                                  <div className="text-rose-600 font-bold">-{formatCurrency(item.discount)}</div>
                                 </div>
+                              ) : (
+                                <span className="text-slate-400">₹0</span>
+                              )}
+                            </td>
+                            <td className="py-1.5 px-1.5 text-right font-medium text-slate-800 text-xs">
+                              <div>{formatCurrency(item.taxable_amount)}</div>
+                              <div className="text-[7.5px] text-slate-400">
+                                {isAccessory ? 'Taxable Val' : 'Margin Diff'}
                               </div>
-                            ) : (
-                              <span className="text-slate-400">₹0</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-2 text-right font-medium text-slate-800">
-                            {formatCurrency(item.taxable_amount)}
-                          </td>
-                          <td className="py-2.5 px-2 text-right text-slate-600">
-                            <div className="font-semibold text-emerald-800">+{formatCurrency(item.total_tax)}</div>
-                            <div className="text-[9px] text-slate-400">({item.tax_rate}% on diff)</div>
-                          </td>
-                          <td className="py-2.5 px-2 text-right font-bold text-slate-900">
-                            {formatCurrency(item.final_price)}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="py-1.5 px-1.5 text-right text-slate-600 text-xs">
+                              <div className="font-semibold text-emerald-800">+{formatCurrency(item.total_tax)}</div>
+                              <div className="text-[7.5px] text-slate-400">
+                                {isAccessory ? '(18% Incl.)' : `(${item.tax_rate || 5}% Diff)`}
+                              </div>
+                            </td>
+                            <td className="py-1.5 px-1.5 text-right font-bold text-slate-900 text-xs">
+                              {formatCurrency(item.final_price)}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
 
                 {/* Financial Breakdown & Amount in Words */}
-                <div className="mt-4 pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 print-avoid-break">
+                <div className="mt-2.5 print:mt-1.5 pt-2 print:pt-1 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 print:gap-2 print-avoid-break">
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">
                       Amount Chargeable (in words):
                     </span>
-                    <p className="text-xs font-bold text-slate-800 italic bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    <p className="text-[11px] font-bold text-slate-800 italic bg-slate-50 p-1.5 rounded-lg border border-slate-200 leading-snug">
                       {numberToWordsINR(sale?.exchange_amount > 0 ? (sale.net_payable !== undefined && sale.net_payable !== null ? sale.net_payable : Math.max(0, sale.grand_total - sale.exchange_amount)) : sale?.grand_total)}
                     </p>
 
                     {/* Exchanged Device Details Box */}
                     {sale?.exchange_amount > 0 && exchange && (
-                      <div className="mt-2.5 p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 text-[10px] text-amber-950">
-                        <span className="font-bold block text-amber-900 mb-0.5">Customer Exchange Device Credited:</span>
-                        <div className="font-semibold text-slate-800">{exchange.brand} {exchange.model} {exchange.variant ? `(${exchange.variant})` : ''} {exchange.color ? `• ${exchange.color}` : ''}</div>
-                        <div className="text-[9px] text-slate-600 mt-0.5">
+                      <div className="mt-1.5 p-1.5 rounded-lg bg-amber-50/80 border border-amber-200 text-[9.5px] text-amber-950 leading-tight">
+                        <span className="font-bold block text-amber-900 mb-0.5">Exchange Device Credited:</span>
+                        <div className="font-semibold text-slate-800">{exchange.brand} {exchange.model} {exchange.variant ? `(${exchange.variant})` : ''}</div>
+                        <div className="text-[8.5px] text-slate-600">
                           IMEI: <span className="font-mono font-bold text-slate-800">{exchange.imei1}</span>
-                          {exchange.battery_health ? ` • Battery: ${exchange.battery_health}%` : ''}
                           {exchange.condition_grade ? ` • Grade: ${exchange.condition_grade}` : ''}
                         </div>
-                        <div className="text-[9px] font-bold text-emerald-700 mt-1">
-                          Trade-In Valuation Credited: {formatCurrency(sale.exchange_amount)}
+                        <div className="text-[8.5px] font-bold text-emerald-700 mt-0.5">
+                          Credit: {formatCurrency(sale.exchange_amount)}
                         </div>
                       </div>
                     )}
 
-                    <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[10px] text-emerald-950 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <div className="mt-1.5 p-1.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[9px] text-emerald-950 flex items-center gap-1.5 leading-snug">
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       <div>
-                        <span className="font-bold block">64-Point Quality Certified & Tested</span>
-                        <span>Eligible for 6 Months Ecofone Replacement / Repair Warranty</span>
+                        <span className="font-bold block">
+                          {hasPhones ? '64-Point Quality Certified & Tested' : '100% Genuine Brand New Products'}
+                        </span>
+                        <span>
+                          {hasPhones 
+                            ? '6 Months Ecofone Certified Replacement / Repair Warranty' 
+                            : 'Manufacturer warranty policies applicable'}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-1 text-xs sm:ml-auto w-full sm:max-w-xs">
+                  <div className="space-y-0.5 text-[11px] sm:ml-auto w-full sm:max-w-xs">
                     <div className="flex justify-between text-slate-600">
                       <span>Subtotal (Items):</span>
                       <span className="font-medium">{formatCurrency(sale?.subtotal)}</span>
                     </div>
-                    <div className="flex justify-between text-slate-700 font-medium pt-1 border-t border-slate-200">
-                      <span>Taxable Margin (Difference):</span>
-                      <span className="font-semibold">{formatCurrency(sale?.taxable_amount)}</span>
-                    </div>
-                    {sale?.cgst > 0 && (
-                      <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>CGST ({halfTaxRate}% on Margin):</span>
-                        <span>{formatCurrency(sale.cgst)}</span>
+                    {phoneMargin > 0 && (
+                      <div className="flex justify-between text-slate-700 font-medium">
+                        <span>Taxable Margin (Phones Diff):</span>
+                        <span className="font-semibold">{formatCurrency(phoneMargin)}</span>
                       </div>
                     )}
-                    {sale?.sgst > 0 && (
-                      <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>SGST ({halfTaxRate}% on Margin):</span>
-                        <span>{formatCurrency(sale.sgst)}</span>
+                    {phoneTax > 0 && (
+                      <div className="flex justify-between text-slate-600 text-[10px]">
+                        <span>Phone GST (5% on Margin):</span>
+                        <span className="font-semibold text-emerald-800">+{formatCurrency(phoneTax)}</span>
                       </div>
                     )}
-                    {sale?.igst > 0 && (
-                      <div className="flex justify-between text-slate-500 text-[11px]">
-                        <span>IGST ({fullTaxRate}% on Margin):</span>
-                        <span>{formatCurrency(sale.igst)}</span>
+                    {accessoryTaxable > 0 && (
+                      <div className="flex justify-between text-slate-700 font-medium">
+                        <span>Taxable Value (Accessories):</span>
+                        <span className="font-semibold">{formatCurrency(accessoryTaxable)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-slate-700">
-                      <span>Total GST (5% on Difference):</span>
+                    {accessoryTax > 0 && (
+                      <div className="flex justify-between text-slate-600 text-[10px]">
+                        <span>Accessory GST (18% Inclusive):</span>
+                        <span className="font-semibold text-emerald-800">+{formatCurrency(accessoryTax)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-slate-700 pt-0.5 border-t border-slate-200">
+                      <span>Total GST:</span>
                       <span className="font-bold text-emerald-800">+{formatCurrency(sale?.total_tax)}</span>
                     </div>
-                    <div className="flex justify-between text-slate-800 font-semibold pt-1 border-t border-slate-100">
+                    <div className="flex justify-between text-slate-800 font-semibold">
                       <span>Total (Items + GST):</span>
                       <span>{formatCurrency((sale?.subtotal || 0) + (sale?.total_tax || 0))}</span>
                     </div>
                     {sale?.discount_total > 0 && (
                       <div className="flex justify-between text-rose-600 font-medium">
-                        <span>
-                          Discount (Applied on Total):
-                        </span>
+                        <span>Discount (Applied on Total):</span>
                         <span className="font-bold">-{formatCurrency(sale?.discount_total)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-2 border-t-2 border-slate-900">
+                    <div className="flex justify-between text-xs sm:text-sm font-black text-slate-900 pt-1 border-t border-slate-900">
                       <span>Grand Total:</span>
                       <span className="text-emerald-800">{formatCurrency(sale?.grand_total)}</span>
                     </div>
@@ -475,11 +527,11 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     {/* Exchange Deduction Breakdown */}
                     {sale?.exchange_amount > 0 && (
                       <>
-                        <div className="flex justify-between text-emerald-800 font-bold text-xs pt-1.5 border-t border-dashed border-slate-300">
+                        <div className="flex justify-between text-emerald-800 font-bold text-[11px] pt-0.5 border-t border-dashed border-slate-300">
                           <span>Less: Exchange Credit:</span>
                           <span>-{formatCurrency(sale.exchange_amount)}</span>
                         </div>
-                        <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-1.5 border-t-2 border-slate-900">
+                        <div className="flex justify-between text-xs sm:text-sm font-black text-slate-900 pt-0.5 border-t-2 border-slate-900">
                           <span>Net Payable / Paid:</span>
                           <span className="text-emerald-900">{formatCurrency(sale.net_payable !== undefined && sale.net_payable !== null ? sale.net_payable : Math.max(0, sale.grand_total - sale.exchange_amount))}</span>
                         </div>
@@ -489,23 +541,23 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                 </div>
 
                 {/* Terms & Conditions & Authorized Sign */}
-                <div className="mt-5 pt-3 border-t border-slate-200 grid grid-cols-3 gap-6 text-[10px] text-slate-500 print-avoid-break">
+                <div className="mt-2.5 print:mt-1 pt-1.5 border-t border-slate-200 grid grid-cols-3 gap-4 text-[9px] print:text-[8.5px] text-slate-500 print-avoid-break">
                   <div className="col-span-2">
-                    <span className="font-bold text-slate-700 uppercase tracking-wider block mb-1">Terms & Conditions:</span>
-                    <p className="whitespace-pre-line leading-relaxed text-slate-600">
-                      {company.invoice_terms || '1. 6 Months certified hardware warranty included.\n2. Warranty void if liquid, physical damage or unauthorized servicing.\n3. Original tax invoice required for warranty claims.\n4. Disputes subject to store local jurisdiction.'}
+                    <span className="font-bold text-slate-700 uppercase tracking-wider block mb-0.5">Terms & Conditions:</span>
+                    <p className="whitespace-pre-line leading-tight text-slate-600">
+                      {company.invoice_terms || '1. 6 Months certified hardware warranty included on phones.\n2. Warranty void if liquid/physical damage or unauthorized repair.\n3. Original tax invoice required for warranty claims.\n4. Disputes subject to store local jurisdiction.'}
                     </p>
                   </div>
                   <div className="text-center flex flex-col justify-end">
-                    <div className="border-b border-slate-300 pb-8"></div>
-                    <span className="font-bold text-slate-800 uppercase tracking-wider mt-1 block text-[10px]">Authorized Signatory</span>
-                    <span className="text-slate-500 text-[9px]">{company.company_name || 'Ecofone India Pvt Ltd'}</span>
+                    <div className="border-b border-slate-300 pb-4"></div>
+                    <span className="font-bold text-slate-800 uppercase tracking-wider mt-0.5 block text-[9px]">Authorized Signatory</span>
+                    <span className="text-slate-500 text-[8px]">{company.company_name || 'Ecofone India Pvt Ltd'}</span>
                   </div>
                 </div>
 
                 {/* Footer */}
-                <div className="mt-3 text-center text-[9px] text-slate-400 border-t border-slate-100 pt-2 print-avoid-break">
-                  {company.invoice_footer || 'Computer generated tax invoice under Section 31 of CGST Act, 2017 & Rule 32(5) Margin Scheme (GST charged at 5% on difference between selling and purchase price). Thank you for choosing Ecofone! For warranty claims visit www.ecofone.in'}
+                <div className="mt-1.5 text-center text-[8px] text-slate-400 border-t border-slate-100 pt-1 print-avoid-break leading-snug">
+                  {company.invoice_footer || 'Computer generated tax invoice under Section 31 of CGST Act, 2017. All accessory prices are inclusive of applicable 18% GST. Refurbished phones are taxed under Rule 32(5) Margin Scheme (5% GST on selling price - purchase price). Thank you for choosing Ecofone! For warranty visit www.ecofone.in'}
                 </div>
 
               </div>
@@ -517,4 +569,6 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

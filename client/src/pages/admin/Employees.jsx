@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Search, Key, UserCheck, UserX, Phone, Mail, Building2, Eye, X, ShieldAlert } from 'lucide-react';
+import { Users, Plus, Search, Key, UserCheck, UserX, Phone, Mail, Building2, Eye, X, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import PermissionsModal from '../../components/employees/PermissionsModal';
 
 export default function Employees() {
   const { user } = useAuth();
@@ -16,12 +17,14 @@ export default function Employees() {
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showPermissionsModal, setShowPermissionsModal] = useState(false);
+  const [permissionsTargetEmp, setPermissionsTargetEmp] = useState(null);
   const [targetUser, setTargetUser] = useState(null);
   const [newPassword, setNewPassword] = useState('');
 
   const [formData, setFormData] = useState({
     username: '',
-    password: 'Emp@123',
+    password: '',
     full_name: '',
     phone: '',
     email: '',
@@ -109,7 +112,7 @@ export default function Employees() {
         setShowAddModal(false);
         setFormData({
           username: '',
-          password: 'Emp@123',
+          password: '',
           full_name: '',
           phone: '',
           email: '',
@@ -267,9 +270,40 @@ export default function Employees() {
                   </td>
 
                   <td className="py-3 px-3">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${emp.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                      {emp.role === 'admin' ? 'Super Admin' : 'Store Staff'}
-                    </span>
+                    {emp.role === 'admin' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-purple-50 text-purple-700 border-purple-200">
+                        Super Admin
+                      </span>
+                    ) : (
+                      <div className="space-y-1">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-slate-100 text-slate-700 border-slate-200 inline-block">
+                          Store Staff
+                        </span>
+                        {(() => {
+                          const perms = emp.permissions || {};
+                          const allowedCount = Object.values(perms).filter(p => p.view !== false).length;
+                          if (allowedCount === 12) {
+                            return (
+                              <span className="block text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 w-fit">
+                                Full Access (12/12)
+                              </span>
+                            );
+                          } else if (allowedCount === 0) {
+                            return (
+                              <span className="block text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 w-fit">
+                                Blocked (0/12)
+                              </span>
+                            );
+                          } else {
+                            return (
+                              <span className="block text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 w-fit">
+                                Custom ({allowedCount}/12)
+                              </span>
+                            );
+                          }
+                        })()}
+                      </div>
+                    )}
                   </td>
 
                   <td className="py-3 px-3 font-medium text-slate-700">
@@ -346,6 +380,20 @@ export default function Employees() {
                       >
                         <Key className="w-4 h-4" />
                       </button>
+
+                      {/* Permissions / Access Control Button */}
+                      {emp.role !== 'admin' && (
+                        <button
+                          onClick={() => {
+                            setPermissionsTargetEmp(emp);
+                            setShowPermissionsModal(true);
+                          }}
+                          className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 rounded-lg transition border border-emerald-200 bg-emerald-50/60 shadow-2xs"
+                          title="Manage Portal Permissions & Access Control"
+                        >
+                          <ShieldCheck className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -504,6 +552,20 @@ export default function Employees() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Permissions Modal */}
+      {showPermissionsModal && permissionsTargetEmp && (
+        <PermissionsModal
+          employee={permissionsTargetEmp}
+          onClose={() => {
+            setShowPermissionsModal(false);
+            setPermissionsTargetEmp(null);
+          }}
+          onUpdated={(updatedPerms) => {
+            setEmployees(prev => prev.map(e => e.id === permissionsTargetEmp.id ? { ...e, permissions: updatedPerms } : e));
+          }}
+        />
       )}
     </div>
   );

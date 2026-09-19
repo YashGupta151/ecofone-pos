@@ -81,11 +81,11 @@ router.get('/', authenticateToken, (req, res) => {
   }
 
   if (date_from) {
-    baseQuery += ` AND DATE(sa.sale_date) >= ?`;
+    baseQuery += ` AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= ?`;
     params.push(date_from);
   }
   if (date_to) {
-    baseQuery += ` AND DATE(sa.sale_date) <= ?`;
+    baseQuery += ` AND DATE(sa.sale_date, '+5 hours', '+30 minutes') <= ?`;
     params.push(date_to);
   }
 
@@ -144,9 +144,13 @@ router.get('/:id', authenticateToken, (req, res) => {
   }
 
   const items = db.prepare(`
-    SELECT si.*, p.ram, p.storage, p.color, p.serial_number, p.internal_product_id
+    SELECT si.*, 
+           p.ram, p.storage, p.color, p.serial_number, p.internal_product_id,
+           a.sku as accessory_sku, a.barcode as accessory_barcode, a.category as accessory_category,
+           a.warranty_period as accessory_warranty
     FROM sale_items si
-    JOIN phone_inventory p ON si.phone_id = p.id
+    LEFT JOIN phone_inventory p ON si.phone_id = p.id
+    LEFT JOIN accessories a ON si.accessory_id = a.id
     WHERE si.sale_id = ?
   `).all(saleId);
 
@@ -271,75 +275,150 @@ router.post('/', authenticateToken, (req, res) => {
     const validatedItems = [];
 
     for (const item of items) {
-      const phone = db.prepare(`SELECT * FROM phone_inventory WHERE id = ?`).get(item.phone_id);
+      const isAccessory = item.item_type === 'accessory' || Boolean(item.accessory_id);
 
-      if (!phone) {
-        throw new Error(`Device ID ${item.phone_id} does not exist in inventory.`);
-      }
+      if (isAccessory) {
+        const accessoryId = item.accessory_id || item.id;
+        const accessory = db.prepare(`SELECT * FROM accessories WHERE id = ?`).get(accessoryId);
 
-      if (phone.stock_status !== 'AVAILABLE') {
-        throw new Error(`Device ${phone.brand} ${phone.model} (IMEI: ${phone.imei1}) is currently ${phone.stock_status}. Cannot be sold again!`);
-      }
+        if (!accessory) {
+          throw new Error(`Accessory ID ${accessoryId} does not exist.`);
+        }
 
-      if (phone.current_store_id !== storeId) {
-        throw new Error(`Device (IMEI: ${phone.imei1}) is registered under a different store. Please initiate a stock transfer first.`);
-      }
+        const qty = Math.max(1, parseInt(item.quantity, 10) || 1);
+        if (accessory.quantity < qty) {
+          throw new Error(`Insufficient stock for accessory "${accessory.name}". Requested: ${qty}, Available: ${accessory.quantity}`);
+        }
 
-      const sPrice = parseFloat(item.selling_price || phone.selling_price);
-      // Purchase price of device (fallback to total_cost if purchase_price <= 0)
-      const pPrice = parseFloat(phone.purchase_price !== undefined && phone.purchase_price !== null && parseFloat(phone.purchase_price) > 0
-        ? phone.purchase_price
-        : (phone.total_cost || 0));
+        if (accessory.store_id !== storeId) {
+          throw new Error(`Accessory "${accessory.name}" belongs to another store.`);
+        }
 
-      // Margin Scheme Rule 32(5): Difference = Selling Price - Purchase Price (calculated before discount)
-      const difference = Math.max(0, sPrice - pPrice);
-      const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
-        ? parseFloat(item.tax_rate)
-        : systemDefaultTaxRate;
+        // Business Rule 2 & 8: Accessory price is ALREADY 18% GST INCLUSIVE.
+        const unitSellingPriceInclusive = parseFloat(item.selling_price || accessory.selling_price_inclusive);
+        const itemGrossInclusive = Math.round(unitSellingPriceInclusive * qty * 100) / 100;
 
-      // GST percentage is applied strictly on the Difference
-      const taxAmount = Math.round((difference * (tRate / 100)) * 100) / 100;
+        // Business Rule 10: Discount applied on the GST-inclusive selling price
+        const disc = Math.min(itemGrossInclusive, Math.max(0, parseFloat(item.discount || 0)));
+        const finalPrice = Math.max(0, Math.round((itemGrossInclusive - disc) * 100) / 100);
 
-      // Tax Split: If customer state != store state -> IGST, else CGST + SGST
-      const isInterState = custRecord.state && store.state && custRecord.state.toLowerCase() !== store.state.toLowerCase();
-      let cgst = 0, sgst = 0, igst = 0;
+        // Business Rule 3: Taxable Value = Inclusive Price * 100 / 118
+        // Extracted GST = Inclusive Price - Taxable Value
+        const gstRate = 18.0;
+        const taxableAmount = Math.round((finalPrice * 100 / (100 + gstRate)) * 100) / 100;
+        const taxAmount = Math.round((finalPrice - taxableAmount) * 100) / 100;
 
-      if (isInterState) {
-        igst = taxAmount;
+        // Interstate / Intra-state tax split
+        const isInterState = custRecord.state && store.state && custRecord.state.toLowerCase() !== store.state.toLowerCase();
+        let cgst = 0, sgst = 0, igst = 0;
+        if (isInterState) {
+          igst = taxAmount;
+        } else {
+          cgst = Math.round((taxAmount / 2) * 100) / 100;
+          sgst = Math.round((taxAmount - cgst) * 100) / 100;
+        }
+
+        subtotal += itemGrossInclusive;
+        discountTotal += disc;
+        taxableAmountTotal += taxableAmount;
+        cgstTotal += cgst;
+        sgstTotal += sgst;
+        igstTotal += igst;
+        totalTaxAll += taxAmount;
+        grandTotalAll += finalPrice;
+
+        validatedItems.push({
+          item_type: 'accessory',
+          accessory,
+          quantity: qty,
+          unit_cost: accessory.purchase_taxable_value, // GST-exclusive cost for accurate profit calculation (Rule 13)
+          selling_price: unitSellingPriceInclusive,
+          discount: disc,
+          taxable_amount: taxableAmount,
+          tax_rate: gstRate,
+          price_includes_gst: 1,
+          cgst,
+          sgst,
+          igst,
+          total_tax: taxAmount,
+          final_price: finalPrice
+        });
       } else {
-        cgst = Math.round((taxAmount / 2) * 100) / 100;
-        sgst = Math.round((taxAmount - cgst) * 100) / 100;
+        // Refurbished Phone processing (Rule 32(5) Margin Scheme)
+        const phone = db.prepare(`SELECT * FROM phone_inventory WHERE id = ?`).get(item.phone_id);
+
+        if (!phone) {
+          throw new Error(`Device ID ${item.phone_id} does not exist in inventory.`);
+        }
+
+        if (phone.stock_status !== 'AVAILABLE') {
+          throw new Error(`Device ${phone.brand} ${phone.model} (IMEI: ${phone.imei1}) is currently ${phone.stock_status}. Cannot be sold again!`);
+        }
+
+        if (phone.current_store_id !== storeId) {
+          throw new Error(`Device (IMEI: ${phone.imei1}) is registered under a different store. Please initiate a stock transfer first.`);
+        }
+
+        const sPrice = parseFloat(item.selling_price || phone.selling_price);
+        // Purchase price of device (fallback to total_cost if purchase_price <= 0)
+        const pPrice = parseFloat(phone.purchase_price !== undefined && phone.purchase_price !== null && parseFloat(phone.purchase_price) > 0
+          ? phone.purchase_price
+          : (phone.total_cost || 0));
+
+        // Margin Scheme Rule 32(5): Difference = Selling Price - Purchase Price (calculated before discount)
+        const difference = Math.max(0, sPrice - pPrice);
+        const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
+          ? parseFloat(item.tax_rate)
+          : systemDefaultTaxRate;
+
+        // GST percentage is applied strictly on the Difference
+        const taxAmount = Math.round((difference * (tRate / 100)) * 100) / 100;
+
+        // Tax Split: If customer state != store state -> IGST, else CGST + SGST
+        const isInterState = custRecord.state && store.state && custRecord.state.toLowerCase() !== store.state.toLowerCase();
+        let cgst = 0, sgst = 0, igst = 0;
+
+        if (isInterState) {
+          igst = taxAmount;
+        } else {
+          cgst = Math.round((taxAmount / 2) * 100) / 100;
+          sgst = Math.round((taxAmount - cgst) * 100) / 100;
+        }
+
+        // Gross amount including GST
+        const grossPriceWithTax = sPrice + taxAmount;
+
+        // Discount is applied on the grand total amount AFTER the GST calculation
+        const disc = Math.min(grossPriceWithTax, parseFloat(item.discount || 0));
+        const finalPrice = Math.max(0, grossPriceWithTax - disc);
+
+        subtotal += sPrice;
+        discountTotal += disc;
+        taxableAmountTotal += difference;
+        cgstTotal += cgst;
+        sgstTotal += sgst;
+        igstTotal += igst;
+        totalTaxAll += taxAmount;
+        grandTotalAll += finalPrice;
+
+        validatedItems.push({
+          item_type: 'phone',
+          phone,
+          quantity: 1,
+          unit_cost: phone.total_cost,
+          selling_price: sPrice,
+          discount: disc,
+          purchase_price: pPrice,
+          taxable_amount: difference,
+          tax_rate: tRate,
+          price_includes_gst: 0,
+          cgst,
+          sgst,
+          igst,
+          total_tax: taxAmount,
+          final_price: finalPrice
+        });
       }
-
-      // Gross amount including GST
-      const grossPriceWithTax = sPrice + taxAmount;
-
-      // Discount is applied on the grand total amount AFTER the GST calculation
-      const disc = Math.min(grossPriceWithTax, parseFloat(item.discount || 0));
-      const finalPrice = Math.max(0, grossPriceWithTax - disc);
-
-      subtotal += sPrice;
-      discountTotal += disc;
-      taxableAmountTotal += difference;
-      cgstTotal += cgst;
-      sgstTotal += sgst;
-      igstTotal += igst;
-      totalTaxAll += taxAmount;
-      grandTotalAll += finalPrice;
-
-      validatedItems.push({
-        phone,
-        selling_price: sPrice,
-        discount: disc,
-        purchase_price: pPrice,
-        taxable_amount: difference,
-        tax_rate: tRate,
-        cgst,
-        sgst,
-        igst,
-        total_tax: taxAmount,
-        final_price: finalPrice
-      });
     }
 
     // 3. Handle Exchange Device if provided
@@ -350,7 +429,18 @@ router.post('/', authenticateToken, (req, res) => {
     if (exchange_device && exchange_device.brand && exchange_device.model && exchange_device.imei1) {
       exchangeAmount = Math.max(0, parseFloat(exchange_device.exchange_value) || 0);
 
-      const imeiClean = exchange_device.imei1.trim();
+      const imeiClean = String(exchange_device.imei1).trim();
+      if (!/^\d{15}$/.test(imeiClean)) {
+        throw new Error('Exchange device IMEI must be exactly 15 numeric digits.');
+      }
+
+      if (exchange_device.imei2 && String(exchange_device.imei2).trim()) {
+        const imei2Clean = String(exchange_device.imei2).trim();
+        if (!/^\d{15}$/.test(imei2Clean)) {
+          throw new Error('Exchange device secondary IMEI 2 must be exactly 15 numeric digits.');
+        }
+      }
+
       const existingInStock = db.prepare(`SELECT id, stock_status FROM phone_inventory WHERE imei1 = ? AND stock_status = 'AVAILABLE'`).get(imeiClean);
       if (existingInStock) {
         throw new Error(`Device with IMEI ${imeiClean} is already registered in active store inventory.`);
@@ -434,18 +524,31 @@ router.post('/', authenticateToken, (req, res) => {
       exchangeRecord = { id: exInsert.lastInsertRowid, exchange_number: exchangeNumber, exchange_value: exchangeAmount };
     }
 
-    // 6. Insert Sale Items and Update Inventory (Rule 3: stock_status -> SOLD)
+    // 6. Insert Sale Items and Update Inventory / Accessory Stock
     const saleItemInsert = db.prepare(`
       INSERT INTO sale_items (
-        sale_id, phone_id, imei1, brand, model, variant, condition_grade,
-        unit_cost, selling_price, discount, taxable_amount, tax_rate, cgst, sgst, igst, total_tax, final_price,
+        sale_id, item_type, phone_id, accessory_id, imei1, brand, model, variant, condition_grade,
+        unit_cost, selling_price, discount, taxable_amount, tax_rate, price_includes_gst,
+        cgst, sgst, igst, total_tax, final_price, quantity,
         warranty_period_months, warranty_expiry
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const updateInventory = db.prepare(`
+    const updatePhoneInventory = db.prepare(`
       UPDATE phone_inventory
-      SET stock_status = 'SOLD', date_sold = DATE('now'), updated_at = CURRENT_TIMESTAMP
+      SET stock_status = 'SOLD', date_sold = DATE('now', '+5 hours', '+30 minutes'), updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+
+    const updateAccessoryStock = db.prepare(`
+      UPDATE accessories
+      SET quantity = quantity - ?,
+          status = CASE 
+            WHEN quantity - ? <= 0 THEN 'Out of Stock'
+            WHEN quantity - ? <= minimum_stock THEN 'Low Stock'
+            ELSE 'In Stock'
+          END,
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
 
@@ -453,44 +556,78 @@ router.post('/', authenticateToken, (req, res) => {
       INSERT INTO warranties (
         phone_id, imei1, customer_id, sale_id, invoice_number, warranty_period_months,
         start_date, end_date, status
-      ) VALUES (?, ?, ?, ?, ?, ?, DATE('now'), DATE('now', '+6 months'), 'Active')
+      ) VALUES (?, ?, ?, ?, ?, ?, DATE('now', '+5 hours', '+30 minutes'), DATE('now', '+5 hours', '+30 minutes', '+6 months'), 'Active')
     `);
 
     for (const v of validatedItems) {
-      saleItemInsert.run(
-        saleId,
-        v.phone.id,
-        v.phone.imei1,
-        v.phone.brand,
-        v.phone.model,
-        v.phone.variant,
-        v.phone.condition_grade,
-        v.phone.total_cost, // Stored true cost for profit calculation!
-        v.selling_price,
-        v.discount,
-        v.taxable_amount,
-        v.tax_rate,
-        v.cgst,
-        v.sgst,
-        v.igst,
-        v.total_tax,
-        v.final_price,
-        v.phone.warranty_period_months || 6,
-        new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      );
+      if (v.item_type === 'accessory') {
+        saleItemInsert.run(
+          saleId,
+          'accessory',
+          null,
+          v.accessory.id,
+          null,
+          v.accessory.brand,
+          v.accessory.name,
+          v.accessory.variant,
+          'Brand New',
+          v.unit_cost,
+          v.selling_price,
+          v.discount,
+          v.taxable_amount,
+          v.tax_rate,
+          1,
+          v.cgst,
+          v.sgst,
+          v.igst,
+          v.total_tax,
+          v.final_price,
+          v.quantity,
+          0,
+          null
+        );
 
-      // Rule 3: Inventory becomes SOLD
-      updateInventory.run(v.phone.id);
+        updateAccessoryStock.run(v.quantity, v.quantity, v.quantity, v.accessory.id);
+      } else {
+        saleItemInsert.run(
+          saleId,
+          'phone',
+          v.phone.id,
+          null,
+          v.phone.imei1,
+          v.phone.brand,
+          v.phone.model,
+          v.phone.variant,
+          v.phone.condition_grade,
+          v.phone.total_cost, // Stored true cost for profit calculation!
+          v.selling_price,
+          v.discount,
+          v.taxable_amount,
+          v.tax_rate,
+          0,
+          v.cgst,
+          v.sgst,
+          v.igst,
+          v.total_tax,
+          v.final_price,
+          1,
+          v.phone.warranty_period_months || 6,
+          new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        );
 
-      // Register Warranty
-      warrantyInsert.run(
-        v.phone.id,
-        v.phone.imei1,
-        customerId,
-        saleId,
-        invoiceNumber,
-        v.phone.warranty_period_months || 6
-      );
+        // Rule 3: Inventory becomes SOLD
+        updatePhoneInventory.run(v.phone.id);
+
+        // Register Warranty for Phone
+        warrantyInsert.run(
+          v.phone.id,
+          v.phone.imei1,
+          customerId,
+          saleId,
+          invoiceNumber,
+          v.phone.warranty_period_months || 6
+        );
+      }
     }
 
     // 7. Record Payment

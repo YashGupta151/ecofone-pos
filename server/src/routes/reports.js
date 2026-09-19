@@ -19,11 +19,11 @@ router.get('/sales', authenticateToken, (req, res) => {
   }
 
   if (date_from) {
-    where += ` AND DATE(sa.sale_date) >= ?`;
+    where += ` AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= ?`;
     params.push(date_from);
   }
   if (date_to) {
-    where += ` AND DATE(sa.sale_date) <= ?`;
+    where += ` AND DATE(sa.sale_date, '+5 hours', '+30 minutes') <= ?`;
     params.push(date_to);
   }
 
@@ -48,7 +48,7 @@ router.get('/sales', authenticateToken, (req, res) => {
 
   const timeline = db.prepare(`
     SELECT 
-      STRFTIME('${timeFormat}', sa.sale_date) as period,
+      STRFTIME('${timeFormat}', sa.sale_date, '+5 hours', '+30 minutes') as period,
       COUNT(sa.id) as sales_count,
       SUM(sa.grand_total) as revenue,
       SUM(sa.total_tax) as tax,
@@ -72,8 +72,8 @@ router.get('/sales', authenticateToken, (req, res) => {
         COALESCE(SUM(si.selling_price - si.unit_cost), 0) as gross_profit
       FROM stores s
       LEFT JOIN sales sa ON s.id = sa.store_id AND sa.status = 'COMPLETED'
-        ${date_from ? 'AND DATE(sa.sale_date) >= ?' : ''}
-        ${date_to ? 'AND DATE(sa.sale_date) <= ?' : ''}
+        ${date_from ? "AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= ?" : ''}
+        ${date_to ? "AND DATE(sa.sale_date, '+5 hours', '+30 minutes') <= ?" : ''}
       LEFT JOIN sale_items si ON sa.id = si.sale_id
       GROUP BY s.id
       ORDER BY revenue DESC
@@ -120,14 +120,14 @@ router.get('/profit-loss', authenticateToken, requireAdmin, (req, res) => {
   }
 
   if (date_from) {
-    saleWhere += ` AND DATE(sa.sale_date) >= ?`;
+    saleWhere += ` AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= ?`;
     expWhere += ` AND e.expense_date >= ?`;
     saleParams.push(date_from);
     expParams.push(date_from);
   }
 
   if (date_to) {
-    saleWhere += ` AND DATE(sa.sale_date) <= ?`;
+    saleWhere += ` AND DATE(sa.sale_date, '+5 hours', '+30 minutes') <= ?`;
     expWhere += ` AND e.expense_date <= ?`;
     saleParams.push(date_to);
     expParams.push(date_to);
@@ -185,8 +185,8 @@ router.get('/profit-loss', authenticateToken, requireAdmin, (req, res) => {
       (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.store_id = s.id ${date_from ? 'AND e.expense_date >= ?' : ''} ${date_to ? 'AND e.expense_date <= ?' : ''}) as store_expenses
     FROM stores s
     LEFT JOIN sales sa ON s.id = sa.store_id AND sa.status = 'COMPLETED'
-      ${date_from ? 'AND DATE(sa.sale_date) >= ?' : ''}
-      ${date_to ? 'AND DATE(sa.sale_date) <= ?' : ''}
+      ${date_from ? "AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= ?" : ''}
+      ${date_to ? "AND DATE(sa.sale_date, '+5 hours', '+30 minutes') <= ?" : ''}
     LEFT JOIN sale_items si ON sa.id = si.sale_id
     GROUP BY s.id
     ORDER BY gross_profit DESC
@@ -229,11 +229,11 @@ router.get('/taxes', authenticateToken, requireAdmin, (req, res) => {
     params.push(parseInt(store_id));
   }
   if (date_from) {
-    where += ` AND DATE(sa.sale_date) >= ?`;
+    where += ` AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= ?`;
     params.push(date_from);
   }
   if (date_to) {
-    where += ` AND DATE(sa.sale_date) <= ?`;
+    where += ` AND DATE(sa.sale_date, '+5 hours', '+30 minutes') <= ?`;
     params.push(date_to);
   }
 
@@ -262,8 +262,8 @@ router.get('/taxes', authenticateToken, requireAdmin, (req, res) => {
       COALESCE(SUM(sa.total_tax), 0) as total_tax
     FROM stores s
     LEFT JOIN sales sa ON s.id = sa.store_id AND sa.status = 'COMPLETED'
-      ${date_from ? 'AND DATE(sa.sale_date) >= ?' : ''}
-      ${date_to ? 'AND DATE(sa.sale_date) <= ?' : ''}
+      ${date_from ? "AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= ?" : ''}
+      ${date_to ? "AND DATE(sa.sale_date, '+5 hours', '+30 minutes') <= ?" : ''}
     GROUP BY s.id
     ORDER BY total_tax DESC
   `).all(...[date_from, date_to].filter(Boolean));

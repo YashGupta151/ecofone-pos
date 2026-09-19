@@ -8,7 +8,7 @@ const { authenticateToken, requireAdmin, logAudit } = require('../middleware/aut
 router.get('/', authenticateToken, (req, res) => {
   let query = `
     SELECT u.id, u.employee_id, u.username, u.full_name, u.phone, u.email, u.address,
-           u.role, u.assigned_store_id, u.status, u.created_at,
+           u.role, u.assigned_store_id, u.status, u.permissions, u.created_at,
            s.name as store_name, s.code as store_code, s.city as store_city,
            (SELECT COUNT(*) FROM sales WHERE employee_id = u.id AND status = 'COMPLETED') as sales_count,
            (SELECT COALESCE(SUM(grand_total), 0) FROM sales WHERE employee_id = u.id AND status = 'COMPLETED') as total_revenue
@@ -19,12 +19,20 @@ router.get('/', authenticateToken, (req, res) => {
   if (req.user.role !== 'admin') {
     query += ` WHERE u.assigned_store_id = ? AND u.role = 'employee'`;
     const employees = db.prepare(query).all(req.user.assigned_store_id);
-    return res.json({ success: true, employees });
+    const mapped = employees.map(e => ({
+      ...e,
+      permissions: db.parseUserPermissions(e.permissions, e.role)
+    }));
+    return res.json({ success: true, employees: mapped });
   }
 
   query += ` ORDER BY u.id ASC`;
   const employees = db.prepare(query).all();
-  res.json({ success: true, employees });
+  const mapped = employees.map(e => ({
+    ...e,
+    permissions: db.parseUserPermissions(e.permissions, e.role)
+  }));
+  res.json({ success: true, employees: mapped });
 });
 
 // GET /api/employees/:id
@@ -37,7 +45,7 @@ router.get('/:id', authenticateToken, (req, res) => {
 
   const employee = db.prepare(`
     SELECT u.id, u.employee_id, u.username, u.full_name, u.phone, u.email, u.address,
-           u.role, u.assigned_store_id, u.status, u.created_at,
+           u.role, u.assigned_store_id, u.status, u.permissions, u.created_at,
            s.name as store_name, s.code as store_code, s.city as store_city
     FROM users u
     LEFT JOIN stores s ON u.assigned_store_id = s.id
@@ -47,6 +55,8 @@ router.get('/:id', authenticateToken, (req, res) => {
   if (!employee) {
     return res.status(404).json({ success: false, message: 'Employee not found.' });
   }
+
+  employee.permissions = db.parseUserPermissions(employee.permissions, employee.role);
 
   // Employee sales breakdown
   const sales = db.prepare(`
@@ -166,6 +176,51 @@ router.patch('/:id/status', authenticateToken, requireAdmin, (req, res) => {
   logAudit(req.user.id, req.user.username, 'TOGGLE_EMPLOYEE_STATUS', null, 'USER', id, { status }, req);
 
   res.json({ success: true, message: `Account status updated to ${status}.` });
+});
+
+// PUT /api/employees/:id/permissions (Admin only)
+router.put('/:id/permissions', authenticateToken, requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { permissions } = req.body;
+
+  const target = db.prepare(`SELECT * FROM users WHERE id = ?`).get(id);
+  if (!target) {
+    return res.status(404).json({ success: false, message: 'Employee not found.' });
+  }
+
+  if (target.role === 'admin') {
+    return res.status(400).json({ success: false, message: 'Super Administrators always have full universal access and cannot be restricted.' });
+  }
+
+  if (!permissions || typeof permissions !== 'object') {
+    return res.status(400).json({ success: false, message: 'Valid permissions object is required.' });
+  }
+
+  const permissionsJson = JSON.stringify(permissions);
+
+  db.prepare(`
+    UPDATE users
+    SET permissions = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(permissionsJson, id);
+
+  logAudit(
+    req.user.id,
+    req.user.username,
+    'UPDATE_EMPLOYEE_PERMISSIONS',
+    target.assigned_store_id,
+    'USER',
+    id,
+    { targetUser: target.username, permissionsSummary: permissions },
+    req
+  );
+
+  const updatedPermissions = db.parseUserPermissions(permissionsJson, 'employee');
+  res.json({
+    success: true,
+    message: `Access permissions for ${target.full_name} (${target.username}) updated successfully.`,
+    permissions: updatedPermissions
+  });
 });
 
 module.exports = router;

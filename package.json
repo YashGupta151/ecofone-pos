@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "description": "Ecofone Multi-Store POS, Inventory & Business Management System",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "build": "cd client && npm install && npm run build",
     "start": "node server/src/index.js",
-    "seed": "node server/src/db/seed.js"
+    "seed": "node server/src/db/seed.js",
+    "rebuild": "npm rebuild better-sqlite3"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

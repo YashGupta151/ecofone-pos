@@ -122,10 +122,29 @@ export default function Inventory() {
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    const cleanImei1 = String(newPhone.imei1 || '').trim().replace(/\D/g, '');
+    if (cleanImei1.length !== 15) {
+      alert('Primary IMEI 1 must be exactly 15 numeric digits.');
+      return;
+    }
+
+    if (newPhone.imei2 && newPhone.imei2.trim()) {
+      const cleanImei2 = String(newPhone.imei2).trim().replace(/\D/g, '');
+      if (cleanImei2.length !== 15) {
+        alert('Secondary IMEI 2 must be exactly 15 numeric digits.');
+        return;
+      }
+    }
+
     try {
       const res = await apiFetch('/inventory', {
         method: 'POST',
-        body: JSON.stringify(newPhone)
+        body: JSON.stringify({
+          ...newPhone,
+          imei1: cleanImei1,
+          imei2: newPhone.imei2 ? newPhone.imei2.trim().replace(/\D/g, '') : ''
+        })
       });
       if (res.success) {
         setShowAddModal(false);
@@ -171,10 +190,29 @@ export default function Inventory() {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!editingPhone) return;
+
+    const cleanImei1 = String(editFormData.imei1 || '').trim().replace(/\D/g, '');
+    if (cleanImei1.length !== 15) {
+      alert('Primary IMEI 1 must be exactly 15 numeric digits.');
+      return;
+    }
+
+    if (editFormData.imei2 && editFormData.imei2.trim()) {
+      const cleanImei2 = String(editFormData.imei2).trim().replace(/\D/g, '');
+      if (cleanImei2.length !== 15) {
+        alert('Secondary IMEI 2 must be exactly 15 numeric digits.');
+        return;
+      }
+    }
+
     try {
       const res = await apiFetch(`/inventory/${editingPhone.id}`, {
         method: 'PUT',
-        body: JSON.stringify(editFormData)
+        body: JSON.stringify({
+          ...editFormData,
+          imei1: cleanImei1,
+          imei2: editFormData.imei2 ? editFormData.imei2.trim().replace(/\D/g, '') : ''
+        })
       });
       if (res.success) {
         setEditingPhone(null);
@@ -551,25 +589,47 @@ export default function Inventory() {
               {/* IMEIs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
                 <div>
-                  <label className="font-bold text-emerald-900 block mb-1">Primary IMEI 1 (Unique) *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-emerald-900 block">Primary IMEI 1 (Unique) *</label>
+                    <span className="text-[10px] font-mono font-semibold text-emerald-700">
+                      {newPhone.imei1 ? `${newPhone.imei1.length}/15` : '15 digits required'}
+                    </span>
+                  </div>
                   <input
                     type="text"
                     required
+                    inputMode="numeric"
+                    maxLength={15}
                     placeholder="15-digit IMEI 1"
                     value={newPhone.imei1}
-                    onChange={(e) => setNewPhone({ ...newPhone, imei1: e.target.value })}
+                    onChange={(e) => setNewPhone({ ...newPhone, imei1: e.target.value.replace(/\D/g, '').slice(0, 15) })}
                     className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-lg font-mono font-bold text-emerald-900"
                   />
+                  {newPhone.imei1 && newPhone.imei1.length === 15 && (
+                    <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">✓ Valid 15-digit IMEI</span>
+                  )}
                 </div>
                 <div>
-                  <label className="font-bold text-slate-600 block mb-1">Secondary IMEI 2 (Optional)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-600 block">Secondary IMEI 2 (Optional)</label>
+                    {newPhone.imei2 && (
+                      <span className="text-[10px] font-mono font-semibold text-slate-500">
+                        {newPhone.imei2.length}/15
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
+                    inputMode="numeric"
+                    maxLength={15}
                     placeholder="15-digit IMEI 2"
                     value={newPhone.imei2}
-                    onChange={(e) => setNewPhone({ ...newPhone, imei2: e.target.value })}
+                    onChange={(e) => setNewPhone({ ...newPhone, imei2: e.target.value.replace(/\D/g, '').slice(0, 15) })}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono"
                   />
+                  {newPhone.imei2 && newPhone.imei2.length === 15 && (
+                    <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">✓ Valid 15-digit IMEI</span>
+                  )}
                 </div>
               </div>
 
@@ -747,25 +807,47 @@ export default function Inventory() {
               {/* IMEIs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
                 <div>
-                  <label className="font-bold text-blue-900 block mb-1">Primary IMEI 1 (Unique) *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-blue-900 block">Primary IMEI 1 (Unique) *</label>
+                    <span className="text-[10px] font-mono font-semibold text-blue-700">
+                      {editFormData.imei1 ? `${editFormData.imei1.length}/15` : '15 digits required'}
+                    </span>
+                  </div>
                   <input
                     type="text"
                     required
+                    inputMode="numeric"
+                    maxLength={15}
                     placeholder="15-digit IMEI 1"
                     value={editFormData.imei1}
-                    onChange={(e) => setEditFormData({ ...editFormData, imei1: e.target.value })}
+                    onChange={(e) => setEditFormData({ ...editFormData, imei1: e.target.value.replace(/\D/g, '').slice(0, 15) })}
                     className="w-full px-3 py-2 bg-white border border-blue-300 rounded-lg font-mono font-bold text-blue-900"
                   />
+                  {editFormData.imei1 && editFormData.imei1.length === 15 && (
+                    <span className="text-[10px] text-blue-600 font-bold block mt-0.5">✓ Valid 15-digit IMEI</span>
+                  )}
                 </div>
                 <div>
-                  <label className="font-bold text-slate-600 block mb-1">Secondary IMEI 2 (Optional)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-600 block">Secondary IMEI 2 (Optional)</label>
+                    {editFormData.imei2 && (
+                      <span className="text-[10px] font-mono font-semibold text-slate-500">
+                        {editFormData.imei2.length}/15
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
+                    inputMode="numeric"
+                    maxLength={15}
                     placeholder="15-digit IMEI 2"
                     value={editFormData.imei2}
-                    onChange={(e) => setEditFormData({ ...editFormData, imei2: e.target.value })}
+                    onChange={(e) => setEditFormData({ ...editFormData, imei2: e.target.value.replace(/\D/g, '').slice(0, 15) })}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono"
                   />
+                  {editFormData.imei2 && editFormData.imei2.length === 15 && (
+                    <span className="text-[10px] text-blue-600 font-bold block mt-0.5">✓ Valid 15-digit IMEI</span>
+                  )}
                 </div>
               </div>
 

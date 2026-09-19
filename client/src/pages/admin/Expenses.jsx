@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, Plus, Trash2, Building2, Calendar, Tag, DollarSign, X } from 'lucide-react';
+import { Wallet, Plus, Trash2, Building2, Calendar, Tag, X } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';

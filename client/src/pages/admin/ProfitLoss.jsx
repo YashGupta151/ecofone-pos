@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, Wallet, Building2, Calendar, ArrowUpRight, ArrowDownRight, FileSpreadsheet } from 'lucide-react';
+import { TrendingUp, IndianRupee, Wallet, Building2, Calendar, ArrowUpRight, ArrowDownRight, FileSpreadsheet } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
 import StatCard from '../../components/ui/StatCard';
@@ -89,7 +89,7 @@ export default function ProfitLoss() {
           title="Net Sales Revenue"
           value={formatCurrency(summary.netRevenue || 0)}
           subtitle={`${summary.phonesSold || 0} phones sold`}
-          icon={DollarSign}
+          icon={IndianRupee}
           color="blue"
         />
         <StatCard

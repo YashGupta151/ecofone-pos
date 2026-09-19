@@ -15,7 +15,8 @@ import {
   Receipt,
   ArrowLeftRight,
   RefreshCw,
-  Check
+  Check,
+  Package
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -23,15 +24,18 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 import InvoiceModal from '../../components/invoice/InvoiceModal';
 
 export default function POS() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, canEdit } = useAuth();
+  const canEditPOS = isAdmin || (canEdit ? canEdit('pos') : true);
 
   // Stores list for admin selector
   const [stores, setStores] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState(user?.assigned_store_id || 1);
 
-  // Search & Available Phones
+  // Search & Catalog State
   const [searchTerm, setSearchTerm] = useState('');
+  const [catalogTab, setCatalogTab] = useState('all'); // 'all' | 'phones' | 'accessories'
   const [availablePhones, setAvailablePhones] = useState([]);
+  const [availableAccessories, setAvailableAccessories] = useState([]);
   const [searching, setSearching] = useState(false);
 
   // Cart
@@ -114,6 +118,12 @@ export default function POS() {
           setStores(storesRes.stores);
           if (!isAdmin && user?.assigned_store_id) {
             setSelectedStoreId(user.assigned_store_id);
+          } else if (isAdmin && storesRes.stores.length > 0) {
+            // Admin: default to first store if current selection doesn't exist in the list
+            setSelectedStoreId(prev => {
+              const exists = storesRes.stores.some(s => s.id === prev);
+              return exists ? prev : storesRes.stores[0].id;
+            });
           }
         }
 
@@ -148,28 +158,34 @@ export default function POS() {
     loadInitialData();
   }, [isAdmin, user]);
 
-  // Keep cart items' tax_rate synchronized with systemTaxRate from Company Settings
+  // Keep cart items' tax_rate synchronized with systemTaxRate from Company Settings (phones only, accessories stay 18%)
   useEffect(() => {
     setCart(prevCart => {
       if (!prevCart || !prevCart.length) return prevCart;
       return prevCart.map(item => ({
         ...item,
-        tax_rate: systemTaxRate
+        tax_rate: item.item_type === 'accessory' ? 18.0 : systemTaxRate
       }));
     });
   }, [systemTaxRate]);
 
-  // Search available phones in selected store
+  // Search available phones and accessories in selected store
   const searchInventory = async () => {
     setSearching(true);
     setError('');
     try {
-      const res = await apiFetch(`/inventory?store_id=${selectedStoreId}&stock_status=AVAILABLE&search=${encodeURIComponent(searchTerm)}&limit=15`);
-      if (res.success) {
-        setAvailablePhones(res.phones || []);
+      const [phonesRes, accRes] = await Promise.all([
+        apiFetch(`/inventory?store_id=${selectedStoreId}&stock_status=AVAILABLE&search=${encodeURIComponent(searchTerm)}&limit=30`),
+        apiFetch(`/accessories?store_id=${selectedStoreId}&status=In Stock&search=${encodeURIComponent(searchTerm)}&limit=30`)
+      ]);
+      if (phonesRes.success) {
+        setAvailablePhones(phonesRes.phones || []);
+      }
+      if (accRes.success) {
+        setAvailableAccessories(accRes.accessories || []);
       }
     } catch (err) {
-      setError(err.message || 'Failed to search store inventory.');
+      setError(err.message || 'Failed to search store catalog.');
     } finally {
       setSearching(false);
     }
@@ -208,46 +224,113 @@ export default function POS() {
 
   // Add phone to cart
   const addToCart = (phone) => {
-    if (cart.find(item => item.id === phone.id)) {
+    if (cart.find(item => item.item_type !== 'accessory' && item.id === phone.id)) {
       setError(`Device (IMEI: ${phone.imei1}) is already in cart.`);
       return;
     }
 
     setCart([...cart, {
       ...phone,
+      item_type: 'phone',
+      quantity: 1,
       selling_price: parseFloat(phone.selling_price) || 0,
       purchase_price: parseFloat(phone.purchase_price !== undefined && phone.purchase_price !== null && parseFloat(phone.purchase_price) > 0 ? phone.purchase_price : (phone.total_cost || 0)),
       discount_mode: 'percent',
       discount_value: '',
       discount: 0,
-      tax_rate: systemTaxRate
+      tax_rate: systemTaxRate,
+      price_includes_gst: 0
     }]);
     setError('');
   };
 
-  const removeFromCart = (phoneId) => {
-    setCart(cart.filter(item => item.id !== phoneId));
+  // Add accessory to cart (18% GST INCLUSIVE)
+  const addAccessoryToCart = (acc) => {
+    const existingIndex = cart.findIndex(item => item.item_type === 'accessory' && item.id === acc.id);
+    if (existingIndex > -1) {
+      setCart(cart.map((item, idx) => {
+        if (idx === existingIndex) {
+          const newQ = (item.quantity || 1) + 1;
+          if (newQ > acc.quantity) {
+            setError(`Only ${acc.quantity} units available in stock for ${acc.name}.`);
+            return item;
+          }
+          return { ...item, quantity: newQ };
+        }
+        return item;
+      }));
+    } else {
+      if (acc.quantity <= 0) {
+        setError(`Accessory "${acc.name}" is currently out of stock.`);
+        return;
+      }
+      setCart([...cart, {
+        ...acc,
+        item_type: 'accessory',
+        quantity: 1,
+        max_quantity: acc.quantity,
+        selling_price: parseFloat(acc.selling_price_inclusive) || 0,
+        purchase_price: parseFloat(acc.purchase_price_inclusive) || 0,
+        purchase_taxable_value: parseFloat(acc.purchase_taxable_value) || 0,
+        discount_mode: 'fixed',
+        discount_value: '',
+        discount: 0,
+        tax_rate: 18.0,
+        price_includes_gst: 1
+      }]);
+    }
+    setError('');
   };
 
-  // Item-level discount updater (applied on item total after GST)
-  const updateItemDiscount = (phoneId, val, mode) => {
+  // Update accessory quantity in cart
+  const updateCartQuantity = (itemId, newQty) => {
+    if (newQty <= 0) {
+      removeFromCart(itemId, 'accessory');
+      return;
+    }
     setCart(cart.map(item => {
-      if (item.id === phoneId) {
-        const itemMode = mode !== undefined ? mode : (item.discount_mode || 'percent');
+      if (item.item_type === 'accessory' && item.id === itemId) {
+        if (item.max_quantity && newQty > item.max_quantity) {
+          setError(`Only ${item.max_quantity} units available in stock.`);
+          return item;
+        }
+        return { ...item, quantity: newQty };
+      }
+      return item;
+    }));
+  };
+
+  const removeFromCart = (itemId, itemType = 'phone') => {
+    setCart(cart.filter(item => !(item.id === itemId && (item.item_type || 'phone') === itemType)));
+  };
+
+  // Item-level discount updater (applied on item total after GST for phones, and on inclusive price for accessories)
+  const updateItemDiscount = (itemId, val, mode, itemType = 'phone') => {
+    setCart(cart.map(item => {
+      if (item.id === itemId && (item.item_type || 'phone') === itemType) {
+        const itemMode = mode !== undefined ? mode : (item.discount_mode || 'fixed');
         const rawVal = val !== undefined ? val : (item.discount_value || '');
         const numVal = parseFloat(rawVal) || 0;
 
-        // Calculate item gross total with GST so discount applies on the total amount after GST
-        const sPrice = parseFloat(item.selling_price) || 0;
-        const pPrice = parseFloat(item.purchase_price !== undefined && item.purchase_price !== null && parseFloat(item.purchase_price) > 0
-          ? item.purchase_price
-          : (item.total_cost || 0));
-        const diff = Math.max(0, sPrice - pPrice);
-        const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
-          ? parseFloat(item.tax_rate)
-          : systemTaxRate;
-        const itemTax = Math.round((diff * (tRate / 100)) * 100) / 100;
-        const grossTotalWithTax = sPrice + itemTax;
+        let grossTotalWithTax = 0;
+
+        if (item.item_type === 'accessory') {
+          // Accessory: Entered selling price already includes 18% GST (Rule 10: Discount applied on GST-inclusive price)
+          const sPrice = (parseFloat(item.selling_price) || 0) * (item.quantity || 1);
+          grossTotalWithTax = sPrice;
+        } else {
+          // Refurbished Phone: SP + 5% GST on Margin
+          const sPrice = parseFloat(item.selling_price) || 0;
+          const pPrice = parseFloat(item.purchase_price !== undefined && item.purchase_price !== null && parseFloat(item.purchase_price) > 0
+            ? item.purchase_price
+            : (item.total_cost || 0));
+          const diff = Math.max(0, sPrice - pPrice);
+          const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
+            ? parseFloat(item.tax_rate)
+            : systemTaxRate;
+          const itemTax = Math.round((diff * (tRate / 100)) * 100) / 100;
+          grossTotalWithTax = sPrice + itemTax;
+        }
 
         let rupeeDiscount = 0;
         if (itemMode === 'percent') {
@@ -268,47 +351,80 @@ export default function POS() {
     }));
   };
 
-  const updateDiscount = (phoneId, discount) => {
-    updateItemDiscount(phoneId, discount, 'fixed');
-  };
-
-  // Calculate totals strictly using Margin Scheme (5% GST on Difference = Selling Price - Purchase Price, and discount applied after GST)
-  const subtotal = cart.reduce((acc, item) => acc + (parseFloat(item.selling_price) || 0), 0);
-
-  // Compute item margins and GST on margin difference, then apply discount on total amount
+  // Compute item margins and GST according to respective tax rules:
+  // - Phones: Rule 32(5) Margin Scheme (5% on Difference)
+  // - Accessories: 18% GST-Inclusive (Taxable = Final * 100 / 118, GST = Final - Taxable)
   const cartWithMargin = cart.map(item => {
-    const sPrice = parseFloat(item.selling_price) || 0;
-    const pPrice = parseFloat(item.purchase_price !== undefined && item.purchase_price !== null && parseFloat(item.purchase_price) > 0
-      ? item.purchase_price
-      : (item.total_cost || 0));
-    // Difference is strictly Selling Price - Purchase Price
-    const difference = Math.max(0, sPrice - pPrice);
-    const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
-      ? parseFloat(item.tax_rate)
-      : systemTaxRate;
-    const itemTax = Math.round((difference * (tRate / 100)) * 100) / 100;
-    const grossPriceWithTax = sPrice + itemTax;
-    const disc = Math.min(grossPriceWithTax, parseFloat(item.discount) || 0);
-    const finalPrice = Math.max(0, grossPriceWithTax - disc);
-    return {
-      ...item,
-      sPrice,
-      pPrice,
-      difference,
-      tRate,
-      itemTax,
-      grossPriceWithTax,
-      disc,
-      finalPrice
-    };
+    if (item.item_type === 'accessory') {
+      const unitPrice = parseFloat(item.selling_price) || 0;
+      const qty = item.quantity || 1;
+      const sPrice = Math.round(unitPrice * qty * 100) / 100;
+      const pPrice = (parseFloat(item.purchase_price) || 0) * qty;
+
+      const grossPriceWithTax = sPrice; // Already inclusive
+      const disc = Math.min(grossPriceWithTax, parseFloat(item.discount) || 0);
+      const finalPrice = Math.max(0, Math.round((grossPriceWithTax - disc) * 100) / 100);
+
+      const gstRate = 18.0;
+      const taxable = Math.round((finalPrice * 100 / (100 + gstRate)) * 100) / 100;
+      const itemTax = Math.round((finalPrice - taxable) * 100) / 100;
+
+      return {
+        ...item,
+        sPrice,
+        pPrice,
+        difference: taxable, // Extracted taxable value for accounting
+        tRate: gstRate,
+        itemTax,
+        grossPriceWithTax,
+        disc,
+        finalPrice,
+        taxable
+      };
+    } else {
+      // Phone Margin Scheme
+      const sPrice = parseFloat(item.selling_price) || 0;
+      const pPrice = parseFloat(item.purchase_price !== undefined && item.purchase_price !== null && parseFloat(item.purchase_price) > 0
+        ? item.purchase_price
+        : (item.total_cost || 0));
+      const difference = Math.max(0, sPrice - pPrice);
+      const tRate = (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
+        ? parseFloat(item.tax_rate)
+        : systemTaxRate;
+      const itemTax = Math.round((difference * (tRate / 100)) * 100) / 100;
+      const grossPriceWithTax = sPrice + itemTax;
+      const disc = Math.min(grossPriceWithTax, parseFloat(item.discount) || 0);
+      const finalPrice = Math.max(0, grossPriceWithTax - disc);
+
+      return {
+        ...item,
+        sPrice,
+        pPrice,
+        difference,
+        tRate,
+        itemTax,
+        grossPriceWithTax,
+        disc,
+        finalPrice,
+        taxable: difference
+      };
+    }
   });
 
-  const totalDifference = cartWithMargin.reduce((acc, item) => acc + item.difference, 0);
-  const totalTax = cartWithMargin.reduce((acc, item) => acc + item.itemTax, 0);
-  const totalGrossWithTax = subtotal + totalTax;
+  // Financial Subtotals
+  const phoneItems = cartWithMargin.filter(i => i.item_type !== 'accessory');
+  const accessoryItems = cartWithMargin.filter(i => i.item_type === 'accessory');
+
+  const phoneSubtotal = phoneItems.reduce((acc, i) => acc + i.sPrice, 0);
+  const phoneDifference = phoneItems.reduce((acc, i) => acc + i.difference, 0);
+  const phoneTax = phoneItems.reduce((acc, i) => acc + i.itemTax, 0);
+
+  const accSubtotalInclusive = accessoryItems.reduce((acc, i) => acc + i.sPrice, 0);
+  const accTaxableTotal = accessoryItems.reduce((acc, i) => acc + i.taxable, 0);
+  const accTaxTotal = accessoryItems.reduce((acc, i) => acc + i.itemTax, 0);
+
   const totalDiscount = cartWithMargin.reduce((acc, item) => acc + item.disc, 0);
-  const overallDiscountPercent = totalGrossWithTax > 0 ? ((totalDiscount / totalGrossWithTax) * 100) : 0;
-  const grandTotal = Math.max(0, totalGrossWithTax - totalDiscount);
+  const grandTotal = cartWithMargin.reduce((acc, item) => acc + item.finalPrice, 0);
 
   // Exchange Valuation & Net Amount Payable
   const exchangeValueNum = hasExchange ? Math.max(0, parseFloat(exchangeDevice.exchange_value) || 0) : 0;
@@ -317,6 +433,11 @@ export default function POS() {
   // Complete Sale Execution
   const handleCompleteSale = async () => {
     setError('');
+
+    if (!canEditPOS) {
+      setError('View Only Mode: You do not have permission to checkout sales. Please contact your administrator.');
+      return;
+    }
 
     if (!customer.full_name.trim() || !customer.phone.trim()) {
       setError('Please provide customer name and phone number.');
@@ -339,9 +460,17 @@ export default function POS() {
         setError('Please provide the Brand and Model of the exchanged device.');
         return;
       }
-      if (!exchangeDevice.imei1.trim() || exchangeDevice.imei1.trim().length < 8) {
-        setError('Please provide a valid Primary IMEI (min 8 characters) for the exchanged device.');
+      const cleanExchangeImei = exchangeDevice.imei1.trim().replace(/\D/g, '');
+      if (cleanExchangeImei.length !== 15) {
+        setError('Please provide a valid 15-digit Primary IMEI for the exchanged device.');
         return;
+      }
+      if (exchangeDevice.imei2 && exchangeDevice.imei2.trim()) {
+        const cleanExchangeImei2 = exchangeDevice.imei2.trim().replace(/\D/g, '');
+        if (cleanExchangeImei2.length !== 15) {
+          setError('Exchanged device Secondary IMEI 2 must be exactly 15 numeric digits.');
+          return;
+        }
       }
       if (exchangeDevice.customer_id_proof_number) {
         const cleanIdProof = exchangeDevice.customer_id_proof_number.replace(/\D/g, '');
@@ -367,12 +496,17 @@ export default function POS() {
           id_proof_number: exchangeDevice.customer_id_proof_number || customer.id_proof_number
         },
         items: cart.map(item => ({
-          phone_id: item.id,
+          item_type: item.item_type || 'phone',
+          phone_id: item.item_type === 'accessory' ? null : item.id,
+          accessory_id: item.item_type === 'accessory' ? item.id : null,
+          quantity: item.item_type === 'accessory' ? (item.quantity || 1) : 1,
           selling_price: item.selling_price,
           discount: item.discount,
-          tax_rate: (item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
-            ? parseFloat(item.tax_rate)
-            : systemTaxRate
+          tax_rate: item.item_type === 'accessory'
+            ? 18.0
+            : ((item.tax_rate !== undefined && item.tax_rate !== null && !isNaN(parseFloat(item.tax_rate)))
+              ? parseFloat(item.tax_rate)
+              : systemTaxRate)
         })),
         exchange_device: hasExchange ? {
           ...exchangeDevice,
@@ -508,70 +642,197 @@ export default function POS() {
             </div>
           </div>
 
-          {/* Available Devices Grid */}
+          {/* Catalog Tab Switcher */}
+          <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-slate-200 shadow-xs">
+            <button
+              onClick={() => setCatalogTab('all')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                catalogTab === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <span>All Catalog</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-700/60 text-slate-200">
+                {availablePhones.length + availableAccessories.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setCatalogTab('phones')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                catalogTab === 'phones'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Phones</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${catalogTab === 'phones' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                {availablePhones.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setCatalogTab('accessories')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                catalogTab === 'accessories'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>Accessories (New)</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${catalogTab === 'accessories' ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                {availableAccessories.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Available Devices & Accessories Grid */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Available In Store ({availablePhones.length})
+                {catalogTab === 'accessories' ? 'Brand-New Accessories (18% GST Incl.)' : catalogTab === 'phones' ? 'Certified Refurbished Phones' : 'Available In Store'}
               </span>
-              <span className="text-[11px] text-slate-400">Click to add to bill</span>
+              <span className="text-[11px] text-slate-400">Click card to add to bill</span>
             </div>
 
-            {availablePhones.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 text-xs">
-                <Smartphone className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                <p>No available smartphones found matching query in this store.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-1">
-                {availablePhones.map((phone) => {
-                  const inCart = cart.some(item => item.id === phone.id);
-                  return (
-                    <div
-                      key={phone.id}
-                      onClick={() => !inCart && addToCart(phone)}
-                      className={`
-                        p-3.5 rounded-xl border text-left transition relative cursor-pointer
-                        ${inCart 
-                          ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed' 
-                          : 'bg-white hover:bg-emerald-50/50 border-slate-200 hover:border-emerald-300 hover:shadow-xs'}
-                      `}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                            {phone.condition_grade}
-                          </span>
-                          <h4 className="font-bold text-slate-900 text-xs mt-1 leading-tight">
-                            {phone.brand} {phone.model}
-                          </h4>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            {phone.variant} {phone.color ? `• ${phone.color}` : ''}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <span className="font-extrabold text-slate-900 text-xs block">
-                            {formatCurrency(phone.selling_price)}
-                          </span>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">
-                            Battery: {phone.battery_health || '90%+'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                        <span className="font-mono text-[10px] text-slate-400 truncate max-w-[140px]">
-                          IMEI: {phone.imei1}
-                        </span>
-                        <span className={`text-[10px] font-bold ${inCart ? 'text-slate-400' : 'text-emerald-600'}`}>
-                          {inCart ? 'In Cart' : '+ Add'}
-                        </span>
-                      </div>
+            {/* Grid Container */}
+            <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+              {/* Phones Section */}
+              {(catalogTab === 'all' || catalogTab === 'phones') && availablePhones.length > 0 && (
+                <div className="space-y-2">
+                  {catalogTab === 'all' && (
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Refurbished Phones ({availablePhones.length})</span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {availablePhones.map((phone) => {
+                      const inCart = cart.some(item => item.item_type !== 'accessory' && item.id === phone.id);
+                      return (
+                        <div
+                          key={phone.id}
+                          onClick={() => !inCart && addToCart(phone)}
+                          className={`
+                            p-3 rounded-xl border text-left transition relative cursor-pointer
+                            ${inCart 
+                              ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed' 
+                              : 'bg-white hover:bg-emerald-50/50 border-slate-200 hover:border-emerald-300 hover:shadow-xs'}
+                          `}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                {phone.condition_grade}
+                              </span>
+                              <h4 className="font-bold text-slate-900 text-xs mt-1 leading-tight">
+                                {phone.brand} {phone.model}
+                              </h4>
+                              <p className="text-[10px] text-slate-500 mt-0.5">
+                                {phone.variant} {phone.color ? `• ${phone.color}` : ''}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-extrabold text-slate-900 text-xs block">
+                                {formatCurrency(phone.selling_price)}
+                              </span>
+                              <span className="text-[9px] text-slate-400 block mt-0.5">
+                                Bat: {phone.battery_health || '90%+'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                            <span className="font-mono text-[9px] text-slate-400 truncate max-w-[130px]">
+                              IMEI: {phone.imei1}
+                            </span>
+                            <span className={`font-bold ${inCart ? 'text-slate-400' : 'text-emerald-600'}`}>
+                              {inCart ? 'In Cart' : '+ Add'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Accessories Section */}
+              {(catalogTab === 'all' || catalogTab === 'accessories') && availableAccessories.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  {catalogTab === 'all' && (
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Package className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>New Accessories • 18% GST Included ({availableAccessories.length})</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {availableAccessories.map((acc) => {
+                      const cartItem = cart.find(item => item.item_type === 'accessory' && item.id === acc.id);
+                      const inCartQty = cartItem ? cartItem.quantity : 0;
+                      return (
+                        <div
+                          key={acc.id}
+                          onClick={() => addAccessoryToCart(acc)}
+                          className="p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 bg-white transition cursor-pointer text-left shadow-2xs hover:shadow-xs"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-100">
+                                  {acc.category}
+                                </span>
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded">
+                                  Brand New
+                                </span>
+                              </div>
+                              <h4 className="font-bold text-slate-900 text-xs mt-1 leading-tight">
+                                {acc.name}
+                              </h4>
+                              <p className="text-[10px] text-slate-500 mt-0.5">
+                                {acc.brand} {acc.variant ? `• ${acc.variant}` : ''}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-extrabold text-indigo-900 text-xs block">
+                                {formatCurrency(acc.selling_price_inclusive)}
+                              </span>
+                              <span className="text-[9px] text-emerald-700 font-medium block">
+                                GST Included
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                            <span className="text-[9px] text-slate-500">
+                              Stock: <strong>{acc.quantity}</strong> units
+                            </span>
+                            <span className="font-bold text-indigo-600 flex items-center gap-1">
+                              {inCartQty > 0 ? (
+                                <span className="bg-indigo-600 text-white px-1.5 py-0.2 rounded-full text-[9px]">
+                                  {inCartQty} in cart
+                                </span>
+                              ) : (
+                                '+ Add'
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {availablePhones.length === 0 && availableAccessories.length === 0 && (
+                <div className="py-12 text-center text-slate-400 text-xs">
+                  <Package className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                  <p>No products found matching query in this store.</p>
+                </div>
+              )}
+            </div>
           </div>
 
         </div>
@@ -704,6 +965,7 @@ export default function POS() {
             ) : (
               <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
                 {cartWithMargin.map((item) => {
+                  const isAccessory = item.item_type === 'accessory';
                   const itemSellingPrice = item.sPrice;
                   const itemGrossPriceWithTax = item.grossPriceWithTax;
                   const itemDiscount = item.disc;
@@ -714,23 +976,85 @@ export default function POS() {
                   const itemTaxRate = item.tRate;
 
                   return (
-                    <div key={item.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+                    <div key={`${item.item_type || 'phone'}-${item.id}`} className={`p-3 rounded-xl border text-xs space-y-2 ${isAccessory ? 'bg-indigo-50/30 border-indigo-200/80' : 'bg-slate-50 border-slate-200'}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="font-bold text-slate-900">{item.brand} {item.model}</div>
-                          <div className="text-[11px] text-slate-500">{item.variant} {item.color ? `• ${item.color}` : ''}</div>
-                          <div className="font-mono text-[10px] text-emerald-700 font-medium">IMEI: {item.imei1}</div>
-                          <div className="flex items-center gap-1.5 text-[10px] mt-0.5">
-                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200/60 font-semibold px-1.5 py-0.5 rounded text-[9px]">
-                              Diff: {formatCurrency(itemDifference)}
-                            </span>
-                            <span className="text-slate-500 text-[10px]">
-                              GST ({itemTaxRate}%): <strong className="text-slate-800">+{formatCurrency(itemTax)}</strong>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            {isAccessory ? (
+                              <span className="text-[9px] font-bold text-indigo-700 bg-indigo-100/70 px-1.5 py-0.2 rounded border border-indigo-200 flex items-center gap-1">
+                                <Package className="w-2.5 h-2.5" /> Brand New Accessory
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded border border-emerald-200">
+                                {item.condition_grade || 'Grade A'}
+                              </span>
+                            )}
+                            <span className="text-[9px] font-bold text-slate-500">
+                              {isAccessory ? '18% GST Incl.' : '5% Margin GST'}
                             </span>
                           </div>
+
+                          <div className="font-bold text-slate-900 text-sm">
+                            {isAccessory ? item.name : `${item.brand} ${item.model}`}
+                          </div>
+                          
+                          <div className="text-[11px] text-slate-500">
+                            {isAccessory ? `${item.brand} ${item.variant ? `• ${item.variant}` : ''}` : `${item.variant} ${item.color ? `• ${item.color}` : ''}`}
+                          </div>
+
+                          {!isAccessory && (
+                            <div className="font-mono text-[10px] text-emerald-700 font-medium mt-0.5">IMEI: {item.imei1}</div>
+                          )}
+
+                          {/* Tax Breakdown Badge */}
+                          <div className="flex items-center gap-1.5 text-[10px] mt-1">
+                            {isAccessory ? (
+                              <>
+                                <span className="bg-indigo-100/60 text-indigo-900 border border-indigo-200 font-semibold px-1.5 py-0.5 rounded text-[9px]">
+                                  Taxable: {formatCurrency(item.taxable)}
+                                </span>
+                                <span className="text-slate-600 text-[10px]">
+                                  GST (18% Incl): <strong className="text-indigo-900">{formatCurrency(itemTax)}</strong>
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="bg-emerald-50 text-emerald-800 border border-emerald-200/60 font-semibold px-1.5 py-0.5 rounded text-[9px]">
+                                  Diff: {formatCurrency(itemDifference)}
+                                </span>
+                                <span className="text-slate-500 text-[10px]">
+                                  GST ({itemTaxRate}%): <strong className="text-slate-800">+{formatCurrency(itemTax)}</strong>
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </div>
+
                         <div className="flex items-center gap-2">
                           <div className="text-right">
+                            {/* Quantity selector for accessories */}
+                            {isAccessory && (
+                              <div className="flex items-center justify-end gap-1 mb-1">
+                                <button
+                                  type="button"
+                                  onClick={() => updateCartQuantity(item.id, (item.quantity || 1) - 1)}
+                                  className="w-5 h-5 rounded bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 flex items-center justify-center text-xs"
+                                >
+                                  -
+                                </button>
+                                <span className="font-extrabold text-slate-900 px-1 text-xs">
+                                  {item.quantity || 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateCartQuantity(item.id, (item.quantity || 1) + 1)}
+                                  className="w-5 h-5 rounded bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 flex items-center justify-center text-xs"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+
                             {itemDiscount > 0 ? (
                               <div>
                                 <span className="line-through text-slate-400 text-[10px] block">
@@ -745,10 +1069,12 @@ export default function POS() {
                                 {formatCurrency(itemFinalPrice)}
                               </span>
                             )}
-                            <span className="text-[9px] text-slate-400 block font-normal">(incl. 5% GST)</span>
+                            <span className="text-[9px] text-slate-400 block font-normal">
+                              {isAccessory ? '(incl. 18% GST)' : '(incl. 5% GST)'}
+                            </span>
                           </div>
                           <button
-                            onClick={() => removeFromCart(item.id)}
+                            onClick={() => removeFromCart(item.id, item.item_type || 'phone')}
                             className="text-slate-400 hover:text-rose-600 p-1 rounded-lg hover:bg-slate-200/50 transition"
                             title="Remove from cart"
                           >
@@ -766,14 +1092,14 @@ export default function POS() {
                             <div className="inline-flex items-center bg-slate-200/70 p-0.5 rounded-lg text-[10px] font-bold">
                               <button
                                 type="button"
-                                onClick={() => updateItemDiscount(item.id, item.discount_value, 'percent')}
+                                onClick={() => updateItemDiscount(item.id, item.discount_value, 'percent', item.item_type || 'phone')}
                                 className={`px-2 py-0.5 rounded transition ${item.discount_mode === 'percent' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
                               >
                                 %
                               </button>
                               <button
                                 type="button"
-                                onClick={() => updateItemDiscount(item.id, item.discount_value, 'fixed')}
+                                onClick={() => updateItemDiscount(item.id, item.discount_value, 'fixed', item.item_type || 'phone')}
                                 className={`px-2 py-0.5 rounded transition ${item.discount_mode === 'fixed' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
                               >
                                 ₹
@@ -788,7 +1114,7 @@ export default function POS() {
                               min="0"
                               max={item.discount_mode === 'percent' ? 100 : itemGrossPriceWithTax}
                               value={item.discount_value !== undefined ? item.discount_value : (item.discount || '')}
-                              onChange={(e) => updateItemDiscount(item.id, e.target.value, item.discount_mode)}
+                              onChange={(e) => updateItemDiscount(item.id, e.target.value, item.discount_mode, item.item_type || 'phone')}
                               placeholder="0"
                               className="w-20 pl-2 pr-5 py-1 text-[11px] bg-white border border-slate-200 rounded-lg text-right font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                             />
@@ -807,7 +1133,7 @@ export default function POS() {
                                 <button
                                   key={pct}
                                   type="button"
-                                  onClick={() => updateItemDiscount(item.id, pct.toString(), 'percent')}
+                                  onClick={() => updateItemDiscount(item.id, pct.toString(), 'percent', item.item_type || 'phone')}
                                   className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border transition ${
                                     item.discount_value === pct.toString() && item.discount_mode === 'percent'
                                       ? 'bg-emerald-600 text-white border-emerald-600'
@@ -818,11 +1144,11 @@ export default function POS() {
                                 </button>
                               ))
                             ) : (
-                              [500, 1000, 2000].map(amt => (
+                              (isAccessory ? [50, 100, 200] : [500, 1000, 2000]).map(amt => (
                                 <button
                                   key={amt}
                                   type="button"
-                                  onClick={() => updateItemDiscount(item.id, amt.toString(), 'fixed')}
+                                  onClick={() => updateItemDiscount(item.id, amt.toString(), 'fixed', item.item_type || 'phone')}
                                   className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border transition ${
                                     item.discount_value === amt.toString() && item.discount_mode === 'fixed'
                                       ? 'bg-emerald-600 text-white border-emerald-600'
@@ -836,7 +1162,7 @@ export default function POS() {
                             {(item.discount > 0 || item.discount_value) && (
                               <button
                                 type="button"
-                                onClick={() => updateItemDiscount(item.id, '', item.discount_mode)}
+                                onClick={() => updateItemDiscount(item.id, '', item.discount_mode, item.item_type || 'phone')}
                                 className="text-[9px] text-rose-500 hover:text-rose-700 font-semibold px-1"
                               >
                                 Clear
@@ -973,17 +1299,22 @@ export default function POS() {
                       <input
                         type="text"
                         required
-                        maxLength={18}
+                        inputMode="numeric"
+                        maxLength={15}
                         placeholder="15-digit IMEI 1"
                         value={exchangeDevice.imei1}
-                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, imei1: e.target.value.replace(/\D/g, '') }))}
+                        onChange={(e) => setExchangeDevice(prev => ({ ...prev, imei1: e.target.value.replace(/\D/g, '').slice(0, 15) }))}
                         className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono tracking-wider"
                       />
-                      {exchangeDevice.imei1 && exchangeDevice.imei1.length === 15 && (
+                      {exchangeDevice.imei1 && exchangeDevice.imei1.length === 15 ? (
                         <span className="text-[9px] text-emerald-600 font-bold flex items-center gap-0.5 mt-0.5">
                           ✓ Valid 15-digit IMEI
                         </span>
-                      )}
+                      ) : exchangeDevice.imei1 ? (
+                        <span className="text-[9px] text-amber-600 font-medium block mt-0.5">
+                          {exchangeDevice.imei1.length}/15 digits
+                        </span>
+                      ) : null}
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
@@ -1140,30 +1471,52 @@ export default function POS() {
 
             {/* Price Calculations */}
             <div className="border-t border-slate-200 pt-3 space-y-1.5 text-xs">
-              <div className="flex justify-between text-slate-600">
-                <span>Subtotal (Items):</span>
-                <span>{formatCurrency(subtotal)}</span>
+              {phoneItems.length > 0 && (
+                <>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Phones Subtotal (Base SP):</span>
+                    <span>{formatCurrency(phoneSubtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Phones Margin (Difference):</span>
+                    <span className="font-medium text-emerald-800">{formatCurrency(phoneDifference)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Phones GST ({systemTaxRate}% on Margin):</span>
+                    <span className="font-bold text-emerald-700">+{formatCurrency(phoneTax)}</span>
+                  </div>
+                </>
+              )}
+
+              {accessoryItems.length > 0 && (
+                <>
+                  <div className="flex justify-between text-indigo-900 font-medium pt-1 border-t border-slate-100">
+                    <span>Accessories Total (18% GST Incl.):</span>
+                    <span>{formatCurrency(accSubtotalInclusive)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>Accessory Taxable Value (100/118):</span>
+                    <span>{formatCurrency(accTaxableTotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-indigo-700">
+                    <span>Accessory 18% GST (Included in Price):</span>
+                    <span className="font-semibold">{formatCurrency(accTaxTotal)}</span>
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-between text-slate-800 font-semibold pt-1 border-t border-slate-200">
+                <span>Total Amount before Discount:</span>
+                <span>{formatCurrency(phoneSubtotal + phoneTax + accSubtotalInclusive)}</span>
               </div>
-              <div className="flex justify-between text-slate-600">
-                <span>Taxable Margin (Difference):</span>
-                <span className="font-medium text-emerald-800">{formatCurrency(totalDifference)}</span>
-              </div>
-              <div className="flex justify-between text-slate-600">
-                <span>GST ({systemTaxRate}% on Difference):</span>
-                <span className="font-bold text-emerald-700">+{formatCurrency(totalTax)}</span>
-              </div>
-              <div className="flex justify-between text-slate-700 font-medium pt-1 border-t border-slate-100">
-                <span>Total (Items + GST):</span>
-                <span>{formatCurrency(totalGrossWithTax)}</span>
-              </div>
+
               {totalDiscount > 0 && (
                 <div className="flex justify-between text-rose-600 font-medium">
-                  <span>
-                    Discount Applied on Total {overallDiscountPercent > 0 ? `(${overallDiscountPercent.toFixed(1).replace(/\.0$/, '')}%)` : ''}:
-                  </span>
+                  <span>Discount Applied on Total:</span>
                   <span className="font-bold">-{formatCurrency(totalDiscount)}</span>
                 </div>
               )}
+
               <div className="flex justify-between text-base font-extrabold text-slate-900 pt-2 border-t border-slate-200">
                 <span>Bill Grand Total:</span>
                 <span className="text-slate-900">{formatCurrency(grandTotal)}</span>
@@ -1221,18 +1574,25 @@ export default function POS() {
             </div>
 
             {/* Complete Sale Button */}
+            {!canEditPOS && (
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold flex items-center gap-2">
+                <span>🔒 View Only Mode: Sales checkout is restricted by administrator.</span>
+              </div>
+            )}
             <button
               onClick={handleCompleteSale}
-              disabled={submitting || cart.length === 0}
+              disabled={submitting || cart.length === 0 || !canEditPOS}
               className={`
                 w-full py-3.5 rounded-xl font-bold text-xs tracking-wide shadow-md transition active:scale-[0.99] flex items-center justify-center gap-2 text-white
-                ${submitting || cart.length === 0 
+                ${submitting || cart.length === 0 || !canEditPOS
                   ? 'bg-slate-300 cursor-not-allowed shadow-none' 
                   : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500'}
               `}
             >
               {submitting ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+              ) : !canEditPOS ? (
+                <span>Checkout Restricted (View Only Mode)</span>
               ) : (
                 <>
                   <CheckCircle className="w-4 h-4" />

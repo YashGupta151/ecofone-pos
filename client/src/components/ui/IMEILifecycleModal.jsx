@@ -7,7 +7,7 @@ import {
   ShieldCheck, 
   RotateCcw, 
   ArrowLeftRight, 
-  DollarSign, 
+  IndianRupee, 
   Building2, 
   User,
   CheckCircle2,
@@ -128,7 +128,7 @@ export default function IMEILifecycleModal({ imei, onClose }) {
               {/* Financial Cost Breakdown (Rule 8 verification) */}
               <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-xs">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-                  <DollarSign className="w-4 h-4 text-emerald-600" />
+                  <IndianRupee className="w-4 h-4 text-emerald-600" />
                   Cost & Margin Structure (True Cost Basis)
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">

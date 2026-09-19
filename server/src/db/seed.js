@@ -1,8 +1,10 @@
+require('dotenv').config();
 const db = require('./database');
 const bcrypt = require('bcryptjs');
 
 function seedDatabase() {
   console.log('Seeding Ecofone Database...');
+  db.pragma('foreign_keys = OFF');
 
   // 1. Settings
   const settingsStmt = db.prepare(`INSERT OR REPLACE INTO settings (key, value, group_name) VALUES (?, ?, ?)`);
@@ -101,14 +103,19 @@ function seedDatabase() {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  const crypto = require('crypto');
+  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(8).toString('hex');
+  const empPassword = process.env.DEFAULT_EMP_PASSWORD || crypto.randomBytes(8).toString('hex');
+
   const salt = bcrypt.genSaltSync(10);
-  const adminPassHash = bcrypt.hashSync('Admin@123', salt);
-  const empPassHash = bcrypt.hashSync('Emp@123', salt);
+  const adminPassHash = bcrypt.hashSync(adminPassword, salt);
+  const empPassHash = bcrypt.hashSync(empPassword, salt);
 
   // CEO / Super Admin
   userStmt.run(
     'ECO-EMP-000',
-    'admin',
+    adminUsername,
     adminPassHash,
     'Aman Singhania (CEO)',
     '+91 98200 99999',
@@ -497,12 +504,139 @@ function seedDatabase() {
   notifStmt.run(null, allStores[4], 'LOW_STOCK', 'Low Stock Alert', 'iPhone 13 128GB stock is below threshold at Indiranagar', 0, '/inventory');
   notifStmt.run(1, null, 'GENERAL', 'Monthly Sales Target', 'Ecofone crossed 30 units sales milestone this month!', 0, '/dashboard');
 
+  // 14. Brand-New GST-Inclusive Accessories
+  db.exec(`DELETE FROM accessories`);
+  db.exec(`DELETE FROM accessory_purchases`);
+
+  const accStmt = db.prepare(`
+    INSERT INTO accessories (
+      accessory_id, sku, barcode, name, category, brand, variant, description,
+      supplier_id, supplier_name,
+      purchase_price_inclusive, purchase_taxable_value, purchase_gst,
+      mrp_inclusive, selling_price_inclusive, selling_taxable_value, selling_gst,
+      gst_rate, price_includes_gst, quantity, minimum_stock, reorder_level,
+      store_id, warranty_period, status
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?
+    )
+  `);
+
+  const accessoryTemplates = [
+    {
+      name: '65W GaN Fast Charger',
+      category: 'Chargers',
+      brand: 'Ecofone Power',
+      variant: 'Dual Port Type-C + USB-A',
+      description: 'Ultra-compact 65W GaN fast charger with PD 3.0 support for iPhones and Android flagship devices.',
+      purchasePrice: 826,   // Taxable: 700, GST: 126
+      mrp: 1499,
+      sellingPrice: 1180,   // Taxable: 1000, GST: 180
+      qty: 45,
+      warranty: '1 Year Brand Warranty'
+    },
+    {
+      name: 'Type-C Braided Cable (1.2m)',
+      category: 'Cables',
+      brand: 'Ecofone Connect',
+      variant: '1.2m / 60W Black',
+      description: 'Durable nylon-braided Type-C to Type-C fast charging and data sync cable.',
+      purchasePrice: 354,   // Taxable: 300, GST: 54
+      mrp: 799,
+      sellingPrice: 590,    // Taxable: 500, GST: 90
+      qty: 80,
+      warranty: '6 Months Brand Warranty'
+    },
+    {
+      name: 'Premium Silicone Phone Cover',
+      category: 'Cases & Covers',
+      brand: 'Ecofone Shield',
+      variant: 'Midnight Black / Soft Touch',
+      description: 'Shockproof liquid silicone protective case with microfiber inner lining.',
+      purchasePrice: 236,   // Taxable: 200, GST: 36
+      mrp: 699,
+      sellingPrice: 472,    // Taxable: 400, GST: 72
+      qty: 60,
+      warranty: 'No Warranty'
+    },
+    {
+      name: '20W PD USB-C Power Adapter',
+      category: 'Chargers',
+      brand: 'Apple Certified',
+      variant: '20W Single Port Type-C',
+      description: 'Fast charging adapter compatible with iPhone 11/12/13/14/15/16.',
+      purchasePrice: 590,   // Taxable: 500, GST: 90
+      mrp: 1299,
+      sellingPrice: 944,    // Taxable: 800, GST: 144
+      qty: 35,
+      warranty: '1 Year Warranty'
+    },
+    {
+      name: '9H Tempered Glass Screen Guard',
+      category: 'Screen Protectors',
+      brand: 'Ecofone Shield',
+      variant: 'Edge-to-Edge HD Clear',
+      description: 'Oleophobic anti-fingerprint 9H hardness tempered glass with alignment frame.',
+      purchasePrice: 118,   // Taxable: 100, GST: 18
+      mrp: 499,
+      sellingPrice: 295,    // Taxable: 250, GST: 45
+      qty: 120,
+      warranty: 'No Warranty'
+    },
+    {
+      name: 'Magnetic Wireless Power Bank 10000mAh',
+      category: 'Power Banks',
+      brand: 'Ecofone Power',
+      variant: '15W MagSafe + 20W PD',
+      description: 'Slim magnetic snap-on wireless power bank with digital battery indicator.',
+      purchasePrice: 1416,  // Taxable: 1200, GST: 216
+      mrp: 2999,
+      sellingPrice: 2360,   // Taxable: 2000, GST: 360
+      qty: 25,
+      warranty: '1 Year Brand Warranty'
+    }
+  ];
+
+  let accSeq = 1;
+  for (const storeId of allStores) {
+    for (const t of accessoryTemplates) {
+      const pInclusive = t.purchasePrice;
+      const pTaxable = Math.round((pInclusive * 100 / 118) * 100) / 100;
+      const pGst = Math.round((pInclusive - pTaxable) * 100) / 100;
+
+      const sInclusive = t.sellingPrice;
+      const sTaxable = Math.round((sInclusive * 100 / 118) * 100) / 100;
+      const sGst = Math.round((sInclusive - sTaxable) * 100) / 100;
+
+      const accId = `ACC-${String(accSeq).padStart(5, '0')}`;
+      const sku = `SKU-${t.category.substring(0, 3).toUpperCase()}-${String(accSeq).padStart(4, '0')}`;
+      const barcode = `890${String(100000000 + accSeq)}`;
+
+      accStmt.run(
+        accId, sku, barcode, t.name, t.category, t.brand, t.variant, t.description,
+        supplierIds[0] || null, 'Apex Mobile Distribution Hub',
+        pInclusive, pTaxable, pGst,
+        t.mrp, sInclusive, sTaxable, sGst,
+        18.0, 1, t.qty, 5, 10,
+        storeId, t.warranty, 'In Stock'
+      );
+      accSeq++;
+    }
+  }
+
+  db.pragma('foreign_keys = ON');
+
   console.log('✅ Ecofone Database seeded successfully!');
   console.log(`- Stores: 12`);
-  console.log(`- Employees: 24 (2 per store, password: Emp@123)`);
-  console.log(`- Admin: admin (password: Admin@123)`);
+  console.log(`- Employees: 24 (2 per store)`);
+  console.log(`- Admin: Account configured securely`);
   console.log(`- Phones: ${createdPhones.length}`);
   console.log(`- Completed Sales: ${soldPhones.length}`);
+  console.log(`- Accessories: ${accessoryTemplates.length * allStores.length} stock items across 12 stores (All 18% GST-Inclusive)`);
 }
 
 seedDatabase();

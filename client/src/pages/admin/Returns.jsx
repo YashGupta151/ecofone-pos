@@ -37,10 +37,18 @@ export default function Returns() {
 
   const handleProcessReturn = async (e) => {
     e.preventDefault();
+    const cleanImei = String(formData.imei || '').trim().replace(/\D/g, '');
+    if (cleanImei.length !== 15) {
+      alert('Device IMEI must be exactly 15 numeric digits.');
+      return;
+    }
     try {
       const res = await apiFetch('/returns', {
         method: 'POST',
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          imei: cleanImei
+        })
       });
       if (res.success) {
         setShowModal(false);
@@ -176,15 +184,25 @@ export default function Returns() {
               </div>
 
               <div>
-                <label className="font-bold text-slate-600 block mb-1">Device IMEI *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-600 block">Device IMEI *</label>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    {formData.imei ? `${formData.imei.length}/15 digits` : '15 digits'}
+                  </span>
+                </div>
                 <input
                   type="text"
                   required
+                  inputMode="numeric"
+                  maxLength={15}
                   placeholder="15-digit IMEI of the returned phone"
                   value={formData.imei}
-                  onChange={(e) => setFormData({ ...formData, imei: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, imei: e.target.value.replace(/\D/g, '').slice(0, 15) })}
                   className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono font-medium"
                 />
+                {formData.imei && formData.imei.length === 15 && (
+                  <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">✓ Valid 15-digit IMEI</span>
+                )}
               </div>
 
               <div>

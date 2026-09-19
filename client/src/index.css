@@ -28,10 +28,35 @@
    PRINT ENGINE STYLES (A4 & 80mm Thermal Receipt)
    ========================================================================== */
 @media print {
+  /* 1. Eliminate all transforms, filters, animations, and backdrop filters that cause Chromium to print blank */
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* 2. Completely eliminate the main app shell (#root) so it occupies ZERO vertical space */
+  #root,
+  body > *:not(.invoice-modal-backdrop):not(.voucher-modal-backdrop) {
+    display: none !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+  }
+
+  /* 3. Page & body setup */
   html, body {
     width: 100% !important;
     height: auto !important;
-    min-height: 100% !important;
+    min-height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
@@ -41,28 +66,41 @@
     print-color-adjust: exact !important;
   }
 
-  /* Hide everything in page by default */
-  body * {
-    visibility: hidden;
-  }
-
-  /* Completely eliminate non-printable UI */
+  /* 4. Hide all modal controls (top bar, buttons, icons) */
   .no-print, 
   .no-print *, 
   aside, 
   header, 
-  nav {
+  nav,
+  button {
     display: none !important;
     height: 0 !important;
+    max-height: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
     border: none !important;
+    overflow: hidden !important;
   }
 
-  /* Reset all modal containers so they don't clip, transform, or offset */
+  /* 5. Modal Backdrop & Dialog: Flow directly onto page 1 */
   .invoice-modal-backdrop,
+  .voucher-modal-backdrop {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    inset: auto !important;
+  }
+
   .invoice-modal-dialog,
-  .invoice-modal-content {
+  .voucher-modal-dialog {
     position: static !important;
     display: block !important;
     width: 100% !important;
@@ -71,26 +109,36 @@
     max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
-    background: transparent !important;
+    background: #ffffff !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
     overflow: visible !important;
-    transform: none !important;
-    animation: none !important;
   }
 
-  /* Printable invoice area */
-  #printable-invoice, 
-  #printable-invoice * {
-    visibility: visible !important;
+  .invoice-modal-content,
+  .voucher-modal-content {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
   }
 
-  #printable-invoice {
-    position: relative !important;
+  /* 6. Printable invoice / voucher container: pure flow starting at top of page 1 */
+  #printable-invoice,
+  #printable-voucher {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
     top: 0 !important;
     left: 0 !important;
     margin: 0 auto !important;
+    padding: 0 !important;
     background: #ffffff !important;
     border: none !important;
     box-shadow: none !important;
@@ -99,13 +147,20 @@
     overflow: visible !important;
   }
 
-  /* Specific A4 Print Fit */
-  .a4-invoice-container {
+  /* Specific A4 Print Fit - Strict Single Page Enforcement */
+  .a4-invoice-container,
+  .a4-voucher-container {
     width: 100% !important;
-    max-width: 190mm !important;
+    max-width: 194mm !important;
     padding: 0 !important;
     margin: 0 auto !important;
     box-sizing: border-box !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   /* 80mm Thermal Receipt Print Fit */
@@ -124,6 +179,8 @@
   .print-avoid-break {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
   }
 
   table {

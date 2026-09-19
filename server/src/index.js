@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const authRoutes = require('./routes/auth');
 const storeRoutes = require('./routes/stores');
@@ -17,6 +18,7 @@ const reportRoutes = require('./routes/reports');
 const dashboardRoutes = require('./routes/dashboard');
 const settingsRoutes = require('./routes/settings');
 const exchangeRoutes = require('./routes/exchanges');
+const accessoryRoutes = require('./routes/accessories');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -56,6 +58,17 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/exchanges', exchangeRoutes);
+app.use('/api/accessories', accessoryRoutes);
+
+// Serve static frontend build if present (Unified Single-Port Deployment)
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {

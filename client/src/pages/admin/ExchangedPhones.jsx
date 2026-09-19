@@ -26,6 +26,7 @@ import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/formatters';
 import InvoiceModal from '../../components/invoice/InvoiceModal';
+import ExchangeVoucherModal from '../../components/invoice/ExchangeVoucherModal';
 
 export default function ExchangedPhones() {
   const { user, isAdmin } = useAuth();
@@ -742,116 +743,10 @@ export default function ExchangedPhones() {
 
       {/* ================= MODAL: PRINTABLE EXCHANGE VOUCHER ================= */}
       {showVoucherModal && selectedExchange && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-2xl w-full p-6 text-xs space-y-4">
-            
-            <div className="flex items-center justify-between border-b pb-3 no-print">
-              <div className="flex items-center gap-2">
-                <Printer className="w-5 h-5 text-amber-600" />
-                <h3 className="font-bold text-sm text-slate-900">Customer Trade-In & Handover Voucher</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Print Voucher</span>
-                </button>
-                <button onClick={() => setShowVoucherModal(false)}>
-                  <X className="w-4 h-4 text-slate-400" />
-                </button>
-              </div>
-            </div>
-
-            {/* Printable Voucher Sheet */}
-            <div className="border border-slate-300 rounded-xl p-6 bg-white space-y-4 text-slate-800">
-              
-              {/* Top Header */}
-              <div className="flex justify-between items-start border-b pb-4">
-                <div>
-                  <h2 className="text-base font-black uppercase text-slate-900">ECOFONE ELECTRONICS</h2>
-                  <p className="text-[10px] text-slate-500">Certified Pre-Owned Premium Smartphones</p>
-                  <p className="text-[10px] text-slate-600 font-semibold mt-1">{selectedExchange.store_name} ({selectedExchange.store_city})</p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Voucher Ref:</span>
-                  <span className="text-xs font-mono font-black text-slate-900">{selectedExchange.exchange_number}</span>
-                  <div className="text-[10px] text-slate-500 mt-0.5">{formatDateTime(selectedExchange.exchange_date)}</div>
-                </div>
-              </div>
-
-              {/* Title */}
-              <div className="text-center py-1 bg-slate-100 rounded text-slate-800 font-extrabold uppercase tracking-wide text-[11px]">
-                DEVICE EXCHANGE & OWNERSHIP TRANSFER DECLARATION
-              </div>
-
-              {/* Device and Customer Grid */}
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                
-                {/* Customer Details */}
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Customer Information</span>
-                  <p className="font-bold text-slate-900">{selectedExchange.customer_name}</p>
-                  <p className="text-slate-600">Phone: {selectedExchange.customer_phone}</p>
-                  {selectedExchange.customer_id_proof_number && (
-                    <p className="text-[10px] font-mono font-semibold text-slate-700">
-                      KYC: {selectedExchange.customer_id_proof_type || 'ID'} — {selectedExchange.customer_id_proof_number}
-                    </p>
-                  )}
-                </div>
-
-                {/* Exchanged Phone Details */}
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Exchanged Device Details</span>
-                  <p className="font-bold text-slate-900">{selectedExchange.brand} {selectedExchange.model}</p>
-                  <p className="font-mono text-slate-800 font-bold text-[11px]">IMEI: {selectedExchange.imei1}</p>
-                  <p className="text-slate-600 text-[10px]">
-                    Condition: {selectedExchange.condition_grade} {selectedExchange.battery_health ? `• Battery: ${selectedExchange.battery_health}%` : ''}
-                  </p>
-                </div>
-
-              </div>
-
-              {/* Valuation Box */}
-              <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 flex justify-between items-center">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900 block">
-                    Agreed Exchange Valuation / Credit
-                  </span>
-                  <span className="text-[10px] text-emerald-700">
-                    Credited against Sale Bill #{selectedExchange.sale_invoice_number || 'Direct'}
-                  </span>
-                </div>
-                <div className="text-lg font-black text-emerald-800">
-                  {formatCurrency(selectedExchange.exchange_value)}
-                </div>
-              </div>
-
-              {/* Legal Declaration */}
-              <div className="text-[9px] text-slate-500 leading-relaxed border-t pt-3 space-y-1">
-                <p className="font-bold text-slate-700">Customer Declaration & Ownership Transfer:</p>
-                <p>
-                  I hereby declare that I am the legal and sole owner of the aforementioned mobile device. The device has not been stolen, blacklisted, or subjected to any insurance claim or legal dispute. All personal data, accounts, and locks (iCloud / Google FRP / Passcode) have been removed by me prior to handing over the device to Ecofone.
-                </p>
-              </div>
-
-              {/* Signature Blocks */}
-              <div className="grid grid-cols-2 gap-8 pt-8 border-t border-dashed border-slate-300">
-                <div className="text-center">
-                  <div className="border-t border-slate-400 w-3/4 mx-auto mb-1"></div>
-                  <span className="text-[10px] font-bold text-slate-700">Customer Signature</span>
-                </div>
-                <div className="text-center">
-                  <div className="border-t border-slate-400 w-3/4 mx-auto mb-1"></div>
-                  <span className="text-[10px] font-bold text-slate-700">Authorized Ecofone Representative</span>
-                  <div className="text-[9px] text-slate-400">({selectedExchange.employee_name})</div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </div>
+        <ExchangeVoucherModal
+          exchange={selectedExchange}
+          onClose={() => setShowVoucherModal(false)}
+        />
       )}
 
       {/* Full Invoice Modal Viewer */}

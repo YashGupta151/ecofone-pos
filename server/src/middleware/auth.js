@@ -14,7 +14,7 @@ function authenticateToken(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const user = db.prepare(`
-      SELECT u.id, u.employee_id, u.username, u.full_name, u.role, u.assigned_store_id, u.status,
+      SELECT u.id, u.employee_id, u.username, u.full_name, u.role, u.assigned_store_id, u.status, u.permissions,
              s.name as store_name, s.code as store_code, s.city as store_city, s.state as store_state
       FROM users u
       LEFT JOIN stores s ON u.assigned_store_id = s.id
@@ -29,6 +29,7 @@ function authenticateToken(req, res, next) {
       return res.status(403).json({ success: false, message: 'Account is inactive or suspended.' });
     }
 
+    user.permissions = db.parseUserPermissions(user.permissions, user.role);
     req.user = user;
     next();
   } catch (err) {

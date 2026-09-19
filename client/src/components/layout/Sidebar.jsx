@@ -19,11 +19,12 @@ import {
   Settings,
   LogOut,
   UserCheck,
-  ShoppingBag
+  ShoppingBag,
+  Package
 } from 'lucide-react';
 
 export default function Sidebar({ isOpen, setIsOpen }) {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, canAccess } = useAuth();
 
   // Admin Nav items according to Section 28
   const adminNav = [
@@ -31,6 +32,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     { label: 'Stores (12)', path: '/admin/stores', icon: Store },
     { label: 'Employees', path: '/admin/employees', icon: Users },
     { label: 'Inventory (IMEI)', path: '/admin/inventory', icon: Smartphone },
+    { label: 'Accessories (New)', path: '/admin/accessories', icon: Package },
     { label: 'Stock Entry', path: '/admin/stock-entry', icon: Truck },
     { label: 'Stock Transfers', path: '/admin/transfers', icon: ArrowLeftRight },
     { label: 'POS / New Sale', path: '/admin/pos', icon: ShoppingBag, highlight: true },
@@ -46,22 +48,26 @@ export default function Sidebar({ isOpen, setIsOpen }) {
     { label: 'Company Settings', path: '/admin/settings', icon: Settings },
   ];
 
-  // Employee Nav items according to Section 29
+  // Employee Nav items according to Section 29 with moduleKey for permission checking
   const employeeNav = [
-    { label: 'Dashboard', path: '/employee/dashboard', icon: LayoutDashboard },
-    { label: 'POS / New Sale', path: '/employee/pos', icon: ShoppingBag, highlight: true },
-    { label: 'Exchanged Phones', path: '/employee/exchanged-phones', icon: ArrowLeftRight },
-    { label: 'Store Inventory', path: '/employee/inventory', icon: Smartphone },
-    { label: 'Stock Entry', path: '/employee/stock-entry', icon: Truck },
-    { label: 'Customers', path: '/employee/customers', icon: Users },
-    { label: 'Sales History', path: '/employee/sales', icon: FileSpreadsheet },
-    { label: 'Invoices & Bills', path: '/employee/invoices', icon: ReceiptText },
-    { label: 'Returns', path: '/employee/returns', icon: RotateCcw },
-    { label: 'Warranty Check', path: '/employee/warranty', icon: ShieldAlert },
-    { label: 'My Profile', path: '/employee/profile', icon: UserCheck },
+    { label: 'Dashboard', path: '/employee/dashboard', icon: LayoutDashboard, moduleKey: 'dashboard' },
+    { label: 'POS / New Sale', path: '/employee/pos', icon: ShoppingBag, highlight: true, moduleKey: 'pos' },
+    { label: 'Exchanged Phones', path: '/employee/exchanged-phones', icon: ArrowLeftRight, moduleKey: 'exchanged_phones' },
+    { label: 'Store Inventory', path: '/employee/inventory', icon: Smartphone, moduleKey: 'inventory' },
+    { label: 'Accessories', path: '/employee/accessories', icon: Package, moduleKey: 'accessories' },
+    { label: 'Stock Entry', path: '/employee/stock-entry', icon: Truck, moduleKey: 'stock_entry' },
+    { label: 'Customers', path: '/employee/customers', icon: Users, moduleKey: 'customers' },
+    { label: 'Sales History', path: '/employee/sales', icon: FileSpreadsheet, moduleKey: 'sales' },
+    { label: 'Invoices & Bills', path: '/employee/invoices', icon: ReceiptText, moduleKey: 'invoices' },
+    { label: 'Returns', path: '/employee/returns', icon: RotateCcw, moduleKey: 'returns' },
+    { label: 'Warranty Check', path: '/employee/warranty', icon: ShieldAlert, moduleKey: 'warranty' },
+    { label: 'My Profile', path: '/employee/profile', icon: UserCheck, moduleKey: 'profile' },
   ];
 
-  const navItems = isAdmin ? adminNav : employeeNav;
+  // If employee has a module blocked, hide it from navigation
+  const allowedEmployeeNav = employeeNav.filter(item => !canAccess || canAccess(item.moduleKey));
+
+  const navItems = isAdmin ? adminNav : allowedEmployeeNav;
 
   return (
     <>

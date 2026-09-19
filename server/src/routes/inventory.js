@@ -203,16 +203,26 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ success: false, message: 'Brand, model, IMEI 1, and selling price are required.' });
   }
 
-  // Check IMEI Uniqueness (Rule 1)
-  const existing = db.prepare(`SELECT id, imei1, stock_status FROM phone_inventory WHERE imei1 = ? OR (imei2 IS NOT NULL AND imei2 = ?)`).get(imei1.trim(), imei1.trim());
-  if (existing) {
-    return res.status(400).json({ success: false, message: `IMEI ${imei1} already exists in the system (Status: ${existing.stock_status}).` });
+  const cleanImei1 = String(imei1).trim();
+  if (!/^\d{15}$/.test(cleanImei1)) {
+    return res.status(400).json({ success: false, message: 'IMEI 1 must be exactly 15 numeric digits.' });
   }
 
-  if (imei2 && imei2.trim()) {
-    const existing2 = db.prepare(`SELECT id, imei1 FROM phone_inventory WHERE imei1 = ? OR imei2 = ?`).get(imei2.trim(), imei2.trim());
+  const cleanImei2 = imei2 && String(imei2).trim() ? String(imei2).trim() : null;
+  if (cleanImei2 && !/^\d{15}$/.test(cleanImei2)) {
+    return res.status(400).json({ success: false, message: 'Secondary IMEI 2 must be exactly 15 numeric digits.' });
+  }
+
+  // Check IMEI Uniqueness (Rule 1)
+  const existing = db.prepare(`SELECT id, imei1, stock_status FROM phone_inventory WHERE imei1 = ? OR (imei2 IS NOT NULL AND imei2 = ?)`).get(cleanImei1, cleanImei1);
+  if (existing) {
+    return res.status(400).json({ success: false, message: `IMEI ${cleanImei1} already exists in the system (Status: ${existing.stock_status}).` });
+  }
+
+  if (cleanImei2) {
+    const existing2 = db.prepare(`SELECT id, imei1 FROM phone_inventory WHERE imei1 = ? OR imei2 = ?`).get(cleanImei2, cleanImei2);
     if (existing2) {
-      return res.status(400).json({ success: false, message: `Secondary IMEI ${imei2} already exists in the system.` });
+      return res.status(400).json({ success: false, message: `Secondary IMEI ${cleanImei2} already exists in the system.` });
     }
   }
 
@@ -354,8 +364,8 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
           failedRows.push({ row: rowNum, imei: rawImei1 || 'N/A', reason: 'Missing required Model' });
           return;
         }
-        if (!rawImei1 || rawImei1.length < 8) {
-          failedRows.push({ row: rowNum, imei: rawImei1 || 'N/A', reason: 'Invalid or missing IMEI 1 (min 8 digits)' });
+        if (!rawImei1 || !/^\d{15}$/.test(rawImei1)) {
+          failedRows.push({ row: rowNum, imei: rawImei1 || 'N/A', reason: 'IMEI 1 must be exactly 15 numeric digits' });
           return;
         }
         if (isNaN(sellingPrice) || sellingPrice <= 0) {
@@ -374,6 +384,10 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
         }
 
         if (rawImei2) {
+          if (!/^\d{15}$/.test(rawImei2)) {
+            failedRows.push({ row: rowNum, imei: rawImei2, reason: `Secondary IMEI 2 (${rawImei2}) must be exactly 15 numeric digits` });
+            return;
+          }
           const imei2Upper = rawImei2.toUpperCase();
           if (seenInBatch.has(imei2Upper) || existingImeiSet.has(imei2Upper)) {
             failedRows.push({ row: rowNum, imei: rawImei2, reason: `Secondary IMEI 2 (${rawImei2}) already exists` });
@@ -541,23 +555,33 @@ router.put('/:id', authenticateToken, (req, res) => {
     return res.status(400).json({ success: false, message: 'Brand, model, IMEI 1, and selling price are required.' });
   }
 
+  const cleanImei1 = String(imei1).trim();
+  if (!/^\d{15}$/.test(cleanImei1)) {
+    return res.status(400).json({ success: false, message: 'IMEI 1 must be exactly 15 numeric digits.' });
+  }
+
+  const cleanImei2 = imei2 && String(imei2).trim() ? String(imei2).trim() : null;
+  if (cleanImei2 && !/^\d{15}$/.test(cleanImei2)) {
+    return res.status(400).json({ success: false, message: 'Secondary IMEI 2 must be exactly 15 numeric digits.' });
+  }
+
   // Check IMEI Uniqueness excluding this phone
   const dupImei1 = db.prepare(`
     SELECT id, imei1, stock_status FROM phone_inventory 
     WHERE (imei1 = ? OR (imei2 IS NOT NULL AND imei2 = ?)) AND id != ?
-  `).get(imei1.trim(), imei1.trim(), phoneId);
+  `).get(cleanImei1, cleanImei1, phoneId);
 
   if (dupImei1) {
-    return res.status(400).json({ success: false, message: `IMEI ${imei1} is already registered on another device (ID #${dupImei1.id}, Status: ${dupImei1.stock_status}).` });
+    return res.status(400).json({ success: false, message: `IMEI ${cleanImei1} is already registered on another device (ID #${dupImei1.id}, Status: ${dupImei1.stock_status}).` });
   }
 
-  if (imei2 && imei2.trim()) {
+  if (cleanImei2) {
     const dupImei2 = db.prepare(`
       SELECT id, imei1 FROM phone_inventory 
       WHERE (imei1 = ? OR imei2 = ?) AND id != ?
-    `).get(imei2.trim(), imei2.trim(), phoneId);
+    `).get(cleanImei2, cleanImei2, phoneId);
     if (dupImei2) {
-      return res.status(400).json({ success: false, message: `Secondary IMEI ${imei2} is already registered on another device.` });
+      return res.status(400).json({ success: false, message: `Secondary IMEI ${cleanImei2} is already registered on another device.` });
     }
   }
 

@@ -10,7 +10,11 @@ build/
 
 # Environment files
 .env
+*.env
+server/.env
 server/.env.local
+client/.env
+client/.env.local
 
 # Logs and system files
 *.log
@@ -24,3 +28,4 @@ Thumbs.db
 *.db-wal
 
 .vercel
+scratch/

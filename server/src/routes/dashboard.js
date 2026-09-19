@@ -10,21 +10,21 @@ router.get('/', authenticateToken, (req, res) => {
 
   let dateFilter = '';
   if (period === 'today') {
-    dateFilter = `AND DATE(sa.sale_date) = DATE('now')`;
+    dateFilter = `AND DATE(sa.sale_date, '+5 hours', '+30 minutes') = DATE('now', '+5 hours', '+30 minutes')`;
   } else if (period === 'yesterday') {
-    dateFilter = `AND DATE(sa.sale_date) = DATE('now', '-1 day')`;
+    dateFilter = `AND DATE(sa.sale_date, '+5 hours', '+30 minutes') = DATE('now', '+5 hours', '+30 minutes', '-1 day')`;
   } else if (period === '7days') {
-    dateFilter = `AND DATE(sa.sale_date) >= DATE('now', '-7 days')`;
+    dateFilter = `AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= DATE('now', '+5 hours', '+30 minutes', '-7 days')`;
   } else if (period === '30days') {
-    dateFilter = `AND DATE(sa.sale_date) >= DATE('now', '-30 days')`;
+    dateFilter = `AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= DATE('now', '+5 hours', '+30 minutes', '-30 days')`;
   } else if (period === 'this_month') {
-    dateFilter = `AND STRFTIME('%Y-%m', sa.sale_date) = STRFTIME('%Y-%m', 'now')`;
+    dateFilter = `AND STRFTIME('%Y-%m', sa.sale_date, '+5 hours', '+30 minutes') = STRFTIME('%Y-%m', 'now', '+5 hours', '+30 minutes')`;
   }
 
   const storeFilter = storeId ? `AND sa.store_id = ${storeId}` : '';
   const invStoreFilter = storeId ? `WHERE current_store_id = ${storeId}` : '';
 
-  // 1. Today's stats
+  // 1. Today's stats (Lucknow IST date)
   const today = db.prepare(`
     SELECT 
       COUNT(DISTINCT sa.id) as today_sales_count,
@@ -34,15 +34,15 @@ router.get('/', authenticateToken, (req, res) => {
       COALESCE(SUM(si.selling_price - si.unit_cost), 0) as today_profit
     FROM sales sa
     LEFT JOIN sale_items si ON sa.id = si.sale_id
-    WHERE sa.status = 'COMPLETED' AND DATE(sa.sale_date) = DATE('now') ${storeFilter}
+    WHERE sa.status = 'COMPLETED' AND DATE(sa.sale_date, '+5 hours', '+30 minutes') = DATE('now', '+5 hours', '+30 minutes') ${storeFilter}
   `).get();
 
-  // Today's expenses
+  // Today's expenses (Lucknow IST date)
   const todayExpFilter = storeId ? `AND (store_id = ${storeId} OR store_id IS NULL)` : '';
   const todayExpenses = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) as today_expenses
     FROM expenses
-    WHERE expense_date = DATE('now') ${todayExpFilter}
+    WHERE expense_date = DATE('now', '+5 hours', '+30 minutes') ${todayExpFilter}
   `).get();
 
   // 2. Selected Period / All-time Business Overview
@@ -114,17 +114,17 @@ router.get('/', authenticateToken, (req, res) => {
     `).all();
   }
 
-  // 4. Chart Data: Daily Sales / Revenue
+  // 4. Chart Data: Daily Sales / Revenue (grouped by Lucknow local date)
   const salesChart = db.prepare(`
     SELECT 
-      DATE(sa.sale_date) as date,
+      DATE(sa.sale_date, '+5 hours', '+30 minutes') as date,
       COUNT(DISTINCT sa.id) as orders,
       SUM(sa.grand_total) as revenue,
       SUM(si.selling_price - si.unit_cost) as profit
     FROM sales sa
     JOIN sale_items si ON sa.id = si.sale_id
-    WHERE sa.status = 'COMPLETED' AND sa.sale_date >= DATE('now', '-30 days') ${storeFilter}
-    GROUP BY date
+    WHERE sa.status = 'COMPLETED' AND sa.sale_date >= DATE('now', '+5 hours', '+30 minutes', '-30 days') ${storeFilter}
+    GROUP BY DATE(sa.sale_date, '+5 hours', '+30 minutes')
     ORDER BY date ASC
   `).all();
 

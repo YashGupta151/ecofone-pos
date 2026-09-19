@@ -51,6 +51,11 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ success: false, message: 'Invoice number, IMEI, and reason are required.' });
   }
 
+  const cleanImei = String(imei).trim();
+  if (!/^\d{15}$/.test(cleanImei)) {
+    return res.status(400).json({ success: false, message: 'Device IMEI must be exactly 15 numeric digits.' });
+  }
+
   // Find the sale and sale_item
   const sale = db.prepare(`SELECT * FROM sales WHERE invoice_number = ?`).get(invoice_number.trim());
   if (!sale) {

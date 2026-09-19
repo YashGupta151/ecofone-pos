@@ -7,11 +7,39 @@ export function formatCurrency(amount) {
   }).format(amount);
 }
 
+// Business timezone for Lucknow, India (IST - Indian Standard Time, UTC+5:30)
+export const BUSINESS_TIMEZONE = 'Asia/Kolkata';
+
+export function parseDate(dateString) {
+  if (!dateString) return null;
+  if (dateString instanceof Date) return dateString;
+  if (typeof dateString === 'number') return new Date(dateString);
+
+  let str = String(dateString).trim();
+
+  // If date-only format YYYY-MM-DD, construct date safely to avoid boundary day-shifts
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split('-').map(Number);
+    // 12:00 PM UTC maps to 5:30 PM IST on the exact same date
+    return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  }
+
+  // If SQLite CURRENT_TIMESTAMP format 'YYYY-MM-DD HH:mm:ss' or 'YYYY-MM-DD HH:mm'
+  // SQLite CURRENT_TIMESTAMP is UTC without 'Z', so append 'Z' for proper UTC parsing
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(str)) {
+    str = str.replace(' ', 'T') + 'Z';
+  }
+
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export function formatDate(dateString) {
   if (!dateString) return '-';
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return dateString;
+  const d = parseDate(dateString);
+  if (!d) return String(dateString);
   return d.toLocaleDateString('en-IN', {
+    timeZone: BUSINESS_TIMEZONE,
     day: '2-digit',
     month: 'short',
     year: 'numeric'
@@ -20,12 +48,25 @@ export function formatDate(dateString) {
 
 export function formatDateTime(dateString) {
   if (!dateString) return '-';
-  const d = new Date(dateString);
-  if (isNaN(d.getTime())) return dateString;
+  const d = parseDate(dateString);
+  if (!d) return String(dateString);
   return d.toLocaleDateString('en-IN', {
+    timeZone: BUSINESS_TIMEZONE,
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
+export function formatTime(dateString) {
+  if (!dateString) return '-';
+  const d = parseDate(dateString);
+  if (!d) return String(dateString);
+  return d.toLocaleTimeString('en-IN', {
+    timeZone: BUSINESS_TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
     hour12: true

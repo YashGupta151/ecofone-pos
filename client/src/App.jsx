@@ -23,13 +23,14 @@ import Reports from './pages/admin/Reports';
 import AuditLogs from './pages/admin/AuditLogs';
 import Settings from './pages/admin/Settings';
 import ExchangedPhones from './pages/admin/ExchangedPhones';
+import Accessories from './pages/admin/Accessories';
 
 // Employee Pages
 import EmployeeDashboard from './pages/employee/Dashboard';
 import EmployeeProfile from './pages/employee/Profile';
 
-function ProtectedRoute({ children, requireAdmin }) {
-  const { user, loading, isAdmin } = useAuth();
+function ProtectedRoute({ children, requireAdmin, moduleKey }) {
+  const { user, loading, isAdmin, canAccess } = useAuth();
 
   if (loading) {
     return (
@@ -45,6 +46,38 @@ function ProtectedRoute({ children, requireAdmin }) {
 
   if (requireAdmin && !isAdmin) {
     return <Navigate to="/employee/dashboard" replace />;
+  }
+
+  // If route is restricted by administrator for this employee
+  if (moduleKey && !isAdmin && canAccess && !canAccess(moduleKey)) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4 sm:p-6">
+        <div className="max-w-md w-full bg-white rounded-2xl border border-slate-200 shadow-xl p-8 text-center space-y-4 animate-in fade-in zoom-in duration-150">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 mx-auto flex items-center justify-center shadow-xs">
+            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <div>
+            <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 uppercase tracking-wider mb-2">
+              Access Restricted
+            </span>
+            <h2 className="text-lg font-extrabold text-slate-900">Module Access Blocked</h2>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              Your administrator has restricted your staff account from opening this portal section. If you believe this is a mistake, please contact your store manager.
+            </p>
+          </div>
+          <div className="pt-2">
+            <a
+              href="/employee/dashboard"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs"
+            >
+              Return to Dashboard
+            </a>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return children;
@@ -73,6 +106,7 @@ export default function App() {
             <Route path="admin/stores" element={<ProtectedRoute requireAdmin><Stores /></ProtectedRoute>} />
             <Route path="admin/employees" element={<ProtectedRoute requireAdmin><Employees /></ProtectedRoute>} />
             <Route path="admin/inventory" element={<ProtectedRoute requireAdmin><Inventory /></ProtectedRoute>} />
+            <Route path="admin/accessories" element={<ProtectedRoute requireAdmin><Accessories /></ProtectedRoute>} />
             <Route path="admin/purchases" element={<ProtectedRoute requireAdmin><Purchases /></ProtectedRoute>} />
             <Route path="admin/stock-entry" element={<ProtectedRoute requireAdmin><Purchases /></ProtectedRoute>} />
             <Route path="admin/transfers" element={<ProtectedRoute requireAdmin><Transfers /></ProtectedRoute>} />
@@ -88,19 +122,20 @@ export default function App() {
             <Route path="admin/audit-logs" element={<ProtectedRoute requireAdmin><AuditLogs /></ProtectedRoute>} />
             <Route path="admin/settings" element={<ProtectedRoute requireAdmin><Settings /></ProtectedRoute>} />
 
-            {/* Employee Routes */}
-            <Route path="employee/dashboard" element={<ProtectedRoute><EmployeeDashboard /></ProtectedRoute>} />
-            <Route path="employee/pos" element={<ProtectedRoute><POS /></ProtectedRoute>} />
-            <Route path="employee/exchanged-phones" element={<ProtectedRoute><ExchangedPhones /></ProtectedRoute>} />
-            <Route path="employee/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-            <Route path="employee/stock-entry" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
-            <Route path="employee/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
-            <Route path="employee/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
-            <Route path="employee/sales" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
-            <Route path="employee/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
-            <Route path="employee/returns" element={<ProtectedRoute><Returns /></ProtectedRoute>} />
-            <Route path="employee/warranty" element={<ProtectedRoute><Warranties /></ProtectedRoute>} />
-            <Route path="employee/profile" element={<ProtectedRoute><EmployeeProfile /></ProtectedRoute>} />
+            {/* Employee Routes with moduleKey permissions guard */}
+            <Route path="employee/dashboard" element={<ProtectedRoute moduleKey="dashboard"><EmployeeDashboard /></ProtectedRoute>} />
+            <Route path="employee/pos" element={<ProtectedRoute moduleKey="pos"><POS /></ProtectedRoute>} />
+            <Route path="employee/exchanged-phones" element={<ProtectedRoute moduleKey="exchanged_phones"><ExchangedPhones /></ProtectedRoute>} />
+            <Route path="employee/inventory" element={<ProtectedRoute moduleKey="inventory"><Inventory /></ProtectedRoute>} />
+            <Route path="employee/accessories" element={<ProtectedRoute moduleKey="accessories"><Accessories /></ProtectedRoute>} />
+            <Route path="employee/stock-entry" element={<ProtectedRoute moduleKey="stock_entry"><Purchases /></ProtectedRoute>} />
+            <Route path="employee/purchases" element={<ProtectedRoute moduleKey="stock_entry"><Purchases /></ProtectedRoute>} />
+            <Route path="employee/customers" element={<ProtectedRoute moduleKey="customers"><Customers /></ProtectedRoute>} />
+            <Route path="employee/sales" element={<ProtectedRoute moduleKey="sales"><Invoices /></ProtectedRoute>} />
+            <Route path="employee/invoices" element={<ProtectedRoute moduleKey="invoices"><Invoices /></ProtectedRoute>} />
+            <Route path="employee/returns" element={<ProtectedRoute moduleKey="returns"><Returns /></ProtectedRoute>} />
+            <Route path="employee/warranty" element={<ProtectedRoute moduleKey="warranty"><Warranties /></ProtectedRoute>} />
+            <Route path="employee/profile" element={<ProtectedRoute moduleKey="profile"><EmployeeProfile /></ProtectedRoute>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

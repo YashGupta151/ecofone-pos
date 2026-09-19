@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  DollarSign, 
+  IndianRupee, 
   ShoppingBag, 
   Smartphone, 
   Store, 
@@ -129,7 +129,7 @@ export default function Dashboard() {
           title="Period Sales Revenue"
           value={formatCurrency(overview.total_revenue || 0)}
           subtitle={`${overview.total_sales_count || 0} customer invoices`}
-          icon={DollarSign}
+          icon={IndianRupee}
           color="emerald"
         />
         <StatCard

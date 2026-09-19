@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Lock, User, Smartphone, Building2, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Lock, User, ArrowRight } from 'lucide-react';
 
 export default function Login() {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('Admin@123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -28,12 +28,6 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const setDemoCredentials = (u, p) => {
-    setUsername(u);
-    setPassword(p);
-    setError('');
   };
 
   return (
@@ -85,7 +79,7 @@ export default function Login() {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. admin or emp001"
+                  placeholder="Enter username or ID"
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
                 />
               </div>
@@ -102,7 +96,7 @@ export default function Login() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Enter password"
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
                 />
               </div>
@@ -123,51 +117,6 @@ export default function Login() {
               )}
             </button>
           </form>
-
-          {/* Quick Demo Credentials Switcher */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-2 text-center">
-              Quick One-Click Demo Logins
-            </span>
-
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <button
-                type="button"
-                onClick={() => setDemoCredentials('admin', 'Admin@123')}
-                className="p-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-medium text-left flex items-center gap-1.5 transition"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="truncate">CEO / Admin</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDemoCredentials('emp001', 'Emp@123')}
-                className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 font-medium text-left flex items-center gap-1.5 transition"
-              >
-                <Building2 className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                <span className="truncate">Store 1 (Mumbai)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDemoCredentials('emp005', 'Emp@123')}
-                className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 font-medium text-left flex items-center gap-1.5 transition"
-              >
-                <Building2 className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                <span className="truncate">Store 3 (Delhi)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDemoCredentials('emp009', 'Emp@123')}
-                className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 font-medium text-left flex items-center gap-1.5 transition"
-              >
-                <Building2 className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                <span className="truncate">Store 5 (Bangalore)</span>
-              </button>
-            </div>
-          </div>
 
         </div>
 

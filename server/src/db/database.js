@@ -71,6 +71,7 @@ function initSchema() {
       role TEXT NOT NULL CHECK(role IN ('admin', 'employee')),
       assigned_store_id INTEGER,
       status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended')),
+      permissions TEXT DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (assigned_store_id) REFERENCES stores(id) ON DELETE SET NULL
@@ -468,6 +469,67 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_exchanged_phones_imei1 ON exchanged_phones(imei1);
     CREATE INDEX IF NOT EXISTS idx_exchanged_phones_store ON exchanged_phones(store_id);
     CREATE INDEX IF NOT EXISTS idx_exchanged_phones_sale ON exchanged_phones(sale_id);
+
+    -- Accessories Table (ALWAYS BRAND NEW, 18% GST INCLUSIVE)
+    CREATE TABLE IF NOT EXISTS accessories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      accessory_id TEXT UNIQUE NOT NULL,
+      sku TEXT UNIQUE NOT NULL,
+      barcode TEXT,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      brand TEXT NOT NULL,
+      variant TEXT,
+      description TEXT,
+      supplier_id INTEGER,
+      supplier_name TEXT,
+      purchase_price_inclusive REAL NOT NULL DEFAULT 0.0,
+      purchase_taxable_value REAL NOT NULL DEFAULT 0.0,
+      purchase_gst REAL NOT NULL DEFAULT 0.0,
+      mrp_inclusive REAL NOT NULL DEFAULT 0.0,
+      selling_price_inclusive REAL NOT NULL DEFAULT 0.0,
+      selling_taxable_value REAL NOT NULL DEFAULT 0.0,
+      selling_gst REAL NOT NULL DEFAULT 0.0,
+      gst_rate REAL NOT NULL DEFAULT 18.0,
+      price_includes_gst INTEGER NOT NULL DEFAULT 1,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      minimum_stock INTEGER NOT NULL DEFAULT 5,
+      reorder_level INTEGER NOT NULL DEFAULT 10,
+      store_id INTEGER NOT NULL,
+      warranty_period TEXT DEFAULT '6 Months',
+      status TEXT NOT NULL DEFAULT 'In Stock',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (store_id) REFERENCES stores(id),
+      FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_accessories_sku ON accessories(sku);
+    CREATE INDEX IF NOT EXISTS idx_accessories_barcode ON accessories(barcode);
+    CREATE INDEX IF NOT EXISTS idx_accessories_store ON accessories(store_id);
+    CREATE INDEX IF NOT EXISTS idx_accessories_category ON accessories(category);
+
+    -- Accessory Purchases Table (Restock Entry Batches)
+    CREATE TABLE IF NOT EXISTS accessory_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      purchase_order_no TEXT,
+      supplier_id INTEGER,
+      supplier_name TEXT,
+      accessory_id INTEGER,
+      quantity INTEGER NOT NULL,
+      purchase_price_inclusive REAL NOT NULL,
+      taxable_value_per_unit REAL NOT NULL,
+      gst_per_unit REAL NOT NULL,
+      total_purchase_value REAL NOT NULL,
+      total_taxable_value REAL NOT NULL,
+      total_gst REAL NOT NULL,
+      purchase_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      store_id INTEGER,
+      FOREIGN KEY (accessory_id) REFERENCES accessories(id),
+      FOREIGN KEY (store_id) REFERENCES stores(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_acc_purchases_acc ON accessory_purchases(accessory_id);
   `);
 }
 
@@ -480,6 +542,76 @@ try {
 try {
   db.exec(`ALTER TABLE sales ADD COLUMN net_payable REAL DEFAULT 0;`);
 } catch (e) {}
+
+// Safe cleanup for dangling foreign keys in accessories
+try {
+  db.exec(`UPDATE accessories SET supplier_id = NULL WHERE supplier_id IS NOT NULL AND supplier_id NOT IN (SELECT id FROM suppliers);`);
+} catch (e) {}
+
+// Safe migration for sale_items to support both Phones and Accessories
+try {
+  const tableInfo = db.prepare(`PRAGMA table_info(sale_items)`).all();
+  const phoneIdCol = tableInfo.find(c => c.name === 'phone_id');
+  const hasItemType = tableInfo.some(c => c.name === 'item_type');
+
+  if (phoneIdCol && phoneIdCol.notnull === 1) {
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      CREATE TABLE IF NOT EXISTS sale_items_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sale_id INTEGER NOT NULL,
+        item_type TEXT DEFAULT 'phone',
+        phone_id INTEGER,
+        accessory_id INTEGER,
+        imei1 TEXT,
+        brand TEXT NOT NULL,
+        model TEXT NOT NULL,
+        variant TEXT,
+        condition_grade TEXT,
+        unit_cost REAL NOT NULL,
+        selling_price REAL NOT NULL,
+        discount REAL DEFAULT 0,
+        taxable_amount REAL NOT NULL,
+        tax_rate REAL DEFAULT 18.0,
+        price_includes_gst INTEGER DEFAULT 0,
+        cgst REAL DEFAULT 0,
+        sgst REAL DEFAULT 0,
+        igst REAL DEFAULT 0,
+        total_tax REAL NOT NULL,
+        final_price REAL NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        warranty_period_months INTEGER DEFAULT 6,
+        warranty_expiry DATE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
+        FOREIGN KEY (phone_id) REFERENCES phone_inventory(id),
+        FOREIGN KEY (accessory_id) REFERENCES accessories(id)
+      );
+
+      INSERT INTO sale_items_new (
+        id, sale_id, item_type, phone_id, imei1, brand, model, variant, condition_grade,
+        unit_cost, selling_price, discount, taxable_amount, tax_rate, price_includes_gst,
+        cgst, sgst, igst, total_tax, final_price, quantity, warranty_period_months, warranty_expiry, created_at
+      )
+      SELECT 
+        id, sale_id, 'phone', phone_id, imei1, brand, model, variant, condition_grade,
+        unit_cost, selling_price, discount, taxable_amount, tax_rate, 0,
+        cgst, sgst, igst, total_tax, final_price, 1, warranty_period_months, warranty_expiry, created_at
+      FROM sale_items;
+
+      DROP TABLE sale_items;
+      ALTER TABLE sale_items_new RENAME TO sale_items;
+      PRAGMA foreign_keys = ON;
+    `);
+  } else {
+    try { db.exec(`ALTER TABLE sale_items ADD COLUMN item_type TEXT DEFAULT 'phone';`); } catch (e) {}
+    try { db.exec(`ALTER TABLE sale_items ADD COLUMN accessory_id INTEGER;`); } catch (e) {}
+    try { db.exec(`ALTER TABLE sale_items ADD COLUMN quantity INTEGER DEFAULT 1;`); } catch (e) {}
+    try { db.exec(`ALTER TABLE sale_items ADD COLUMN price_includes_gst INTEGER DEFAULT 0;`); } catch (e) {}
+  }
+} catch (e) {
+  console.error('Error migrating sale_items table:', e);
+}
 
 // Auto-seed or restore settings if settings table is empty
 try {
@@ -532,5 +664,63 @@ try {
 } catch (err) {
   console.error('Error initializing settings table:', err);
 }
+
+// Ensure 'permissions' column exists in users table
+try {
+  const userCols = db.prepare(`PRAGMA table_info(users)`).all();
+  if (!userCols.some(c => c.name === 'permissions')) {
+    db.prepare(`ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT NULL`).run();
+    console.log('✅ Successfully added permissions column to users table.');
+  }
+} catch (err) {
+  console.error('Migration error for users.permissions:', err);
+}
+
+// Standard full employee permissions structure
+const DEFAULT_EMPLOYEE_PERMISSIONS = {
+  dashboard: { view: true },
+  pos: { view: true, edit: true },
+  exchanged_phones: { view: true, edit: true },
+  inventory: { view: true, edit: true },
+  accessories: { view: true, edit: true },
+  stock_entry: { view: true, edit: true },
+  customers: { view: true, edit: true },
+  sales: { view: true },
+  invoices: { view: true, edit: true },
+  returns: { view: true, edit: true },
+  warranty: { view: true },
+  profile: { view: true, edit: true }
+};
+
+function parseUserPermissions(permissionsStr, role = 'employee') {
+  if (role === 'admin') {
+    // Admin has full universal permissions
+    const adminPerms = {};
+    for (const k of Object.keys(DEFAULT_EMPLOYEE_PERMISSIONS)) {
+      adminPerms[k] = { view: true, edit: true };
+    }
+    return adminPerms;
+  }
+
+  if (!permissionsStr) {
+    return { ...DEFAULT_EMPLOYEE_PERMISSIONS };
+  }
+
+  try {
+    const parsed = typeof permissionsStr === 'string' ? JSON.parse(permissionsStr) : permissionsStr;
+    const merged = { ...DEFAULT_EMPLOYEE_PERMISSIONS };
+    for (const [key, val] of Object.entries(parsed)) {
+      if (typeof val === 'object' && val !== null) {
+        merged[key] = { ...merged[key], ...val };
+      }
+    }
+    return merged;
+  } catch (e) {
+    return { ...DEFAULT_EMPLOYEE_PERMISSIONS };
+  }
+}
+
+db.DEFAULT_EMPLOYEE_PERMISSIONS = DEFAULT_EMPLOYEE_PERMISSIONS;
+db.parseUserPermissions = parseUserPermissions;
 
 module.exports = db;

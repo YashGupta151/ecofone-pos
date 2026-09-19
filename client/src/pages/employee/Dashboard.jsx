@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingBag, Smartphone, Receipt, DollarSign, Building2, User, Eye } from 'lucide-react';
+import { ShoppingBag, Smartphone, Receipt, IndianRupee, Building2, User, Eye } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
@@ -69,7 +69,7 @@ export default function EmployeeDashboard() {
           title="Today's Store Sales"
           value={formatCurrency(today.today_revenue || 0)}
           subtitle={`${today.today_phones_sold || 0} phones sold today`}
-          icon={DollarSign}
+          icon={IndianRupee}
           color="emerald"
         />
         <StatCard

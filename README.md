@@ -72,26 +72,15 @@ npm run dev           # Starts Vite dev server on http://localhost:5173
 
 ---
 
-## 🔑 Demo Login Credentials
+## 🔑 User Roles & Access Control
 
 ### CEO / Super Administrator
-- **Username**: `admin`
-- **Password**: `Admin@123`
-- **Access**: Central control over all 12 stores, company-wide P&L, stock transfers, inventory, audit logs, and settings.
+- Full centralized control over all 12 stores, company-wide P&L, stock transfers, inventory, audit logs, and settings.
+- Credentials configured securely via environment variables or set upon deployment.
 
-### Store Employees (2 per store, password: `Emp@123`)
-- **Mumbai Flagship (BKC)**: `emp001` (Rajesh Kulkarni), `emp002` (Pooja Bhosle)
-- **South Mumbai (Colaba)**: `emp003` (Sunita Rao), `emp004` (Amit Jadhav)
-- **Delhi Connaught Place**: `emp005` (Vikas Sharma), `emp006` (Kavita Rawat)
-- **Delhi South Extension**: `emp007` (Neha Kapoor), `emp008` (Rohan Bhatia)
-- **Bengaluru Indiranagar**: `emp009` (Arun Kumar), `emp010` (Divya Murthy)
-- **Bengaluru Koramangala**: `emp011` (Pooja Hegde), `emp012` (Naveen Gowda)
-- **Hyderabad Hitec City**: `emp013` (Karthik Reddy), `emp014` (Swathi Rao)
-- **Chennai T. Nagar**: `emp015` (Suresh Raman), `emp016` (Meena Sundaram)
-- **Pune Koregaon Park**: `emp017` (Anil Deshmukh), `emp018` (Sneha Shinde)
-- **Kolkata Park Street**: `emp019` (Debashis Sen), `emp020` (Riya Mukherjee)
-- **Ahmedabad CG Road**: `emp021` (Jignesh Patel), `emp022` (Bhavna Shah)
-- **Jaipur MI Road**: `emp023` (Manish Rathore), `emp024` (Priyanka Shekhawat)
+### Store Employees
+- Point of Sale (POS) billing, trade-in exchange vouchers, customer management, and branch inventory.
+- 2 employees configured per branch across Mumbai, Delhi, Bengaluru, Hyderabad, Chennai, Pune, Kolkata, Ahmedabad, and Jaipur.
 
 ---
 

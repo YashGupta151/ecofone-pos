@@ -107,7 +107,7 @@ router.get('/', authenticateToken, (req, res) => {
     SELECT
       COUNT(*) as total_devices,
       COALESCE(SUM(exchange_value), 0) as total_valuation,
-      SUM(CASE WHEN DATE(exchange_date) = DATE('now') THEN 1 ELSE 0 END) as today_count,
+      SUM(CASE WHEN DATE(exchange_date, '+5 hours', '+30 minutes') = DATE('now', '+5 hours', '+30 minutes') THEN 1 ELSE 0 END) as today_count,
       SUM(CASE WHEN status = 'IN_STOCK' THEN 1 ELSE 0 END) as in_stock_count,
       SUM(CASE WHEN status = 'ADDED_TO_INVENTORY' THEN 1 ELSE 0 END) as converted_to_inventory_count
     FROM exchanged_phones
