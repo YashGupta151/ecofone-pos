@@ -85,6 +85,13 @@ pm2 logs ecofone-pos
 pm2 status
 ```
 
+Verify the live alias after deployment:
+```bash
+curl -i https://your-domain.example/api/health
+curl -I https://your-domain.example/
+```
+The first command must return JSON containing `"database":"connected"`; the second must return the frontend HTML. If `/` works but `/api/health` returns an HTML page, the domain/reverse proxy is serving only the frontend and is not forwarding `/api/*` to the Node process. If `/api/health` returns `503`, check that `server/data` is writable and that the deployed database file exists.
+
 ---
 
 ## 🌐 Nginx Reverse Proxy Configuration (Optional, for Domain & SSL)

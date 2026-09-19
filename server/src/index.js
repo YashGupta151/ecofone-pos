@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const db = require('./db/database');
 
 const authRoutes = require('./routes/auth');
 const storeRoutes = require('./routes/stores');
@@ -34,13 +35,23 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health Check
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    application: 'Ecofone POS & Multi-Store Management Backend',
-    version: '1.0.0',
-    storesCount: 12,
-    timestamp: new Date().toISOString()
-  });
+  try {
+    const database = db.prepare('SELECT 1 AS connected').get();
+    res.json({
+      status: database.connected === 1 ? 'healthy' : 'unhealthy',
+      database: database.connected === 1 ? 'connected' : 'unavailable',
+      application: 'Ecofone POS & Multi-Store Management Backend',
+      version: '1.0.0',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Database health check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      database: 'unavailable',
+      message: 'Database connection failed'
+    });
+  }
 });
 
 // Mount Routes
