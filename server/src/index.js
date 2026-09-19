@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const db = require('./db/database');
 
 const authRoutes = require('./routes/auth');
 const storeRoutes = require('./routes/stores');
@@ -34,15 +35,24 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health Check
 app.get('/api/health', (req, res) => {
-  const db = require('./db/database');
-  const count = db.prepare("SELECT count(*) as c FROM stores WHERE status = 'active'").get()?.c || 1;
-  res.json({
-    status: 'healthy',
-    application: 'Ecofone POS & Multi-Store Management Backend',
-    version: '1.0.0',
-    storesCount: count,
-    timestamp: new Date().toISOString()
-  });
+  try {
+    const count = db.prepare("SELECT count(*) as c FROM stores WHERE status = 'active'").get()?.c || 1;
+    res.json({
+      status: 'healthy',
+      database: 'connected',
+      application: 'Ecofone POS & Multi-Store Management Backend',
+      version: '1.0.0',
+      storesCount: count,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Database health check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      database: 'unavailable',
+      message: 'Database connection failed'
+    });
+  }
 });
 
 // Mount Routes
@@ -81,14 +91,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`\n======================================================`);
-    console.log(`🚀 Ecofone POS & Multi-Store Server running on port ${PORT}`);
-    console.log(`🏬 Managing 12 Physical Stores Across India`);
-    console.log(`👉 API Health: http://localhost:${PORT}/api/health`);
-    console.log(`======================================================\n`);
-  });
-}
+app.listen(PORT, () => {
+  console.log(`\n======================================================`);
+  console.log(`🚀 Ecofone POS & Multi-Store Server running on port ${PORT}`);
+  console.log(`🏬 Managing 12 Physical Stores Across India`);
+  console.log(`👉 API Health: http://localhost:${PORT}/api/health`);
+  console.log(`======================================================\n`);
+});
 
 module.exports = app;

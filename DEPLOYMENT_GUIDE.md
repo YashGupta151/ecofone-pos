@@ -3,12 +3,14 @@
 This zip package contains the complete, production-ready codebase for **Ecofone POS & Multi-Store Management System**.
 The application is pre-configured with a unified single-port architecture: the Node.js backend automatically serves both the **REST API** (`/api/*`) and the **React Production Frontend** (`client/dist`) from a single port (default: `5000` or your custom `PORT`).
 
+> **Production database requirement:** Run the backend as one continuously running service (PM2/systemd/Docker) with persistent storage. This application uses SQLite, so do not deploy the API as multiple serverless functions for live POS writes.
+
 ---
 
 ## 🚀 Quick Start on Linux Server (Ubuntu / Debian / CentOS)
 
 ### 1. Prerequisites
-Ensure **Node.js (v18, v20, or v22)** and **npm** are installed:
+Ensure **Node.js v20.x** and **npm** are installed:
 ```bash
 # Check installed versions
 node -v
@@ -17,6 +19,13 @@ npm -v
 # If not installed on Ubuntu/Debian:
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs build-essential
+```
+
+The repository pins the expected runtime in `.nvmrc` and the package `engines` fields. If you use nvm, select it before installing dependencies:
+```bash
+nvm install 20
+nvm use 20
+node -v  # should report v20.x
 ```
 
 ---
@@ -29,17 +38,14 @@ cd /var/www/ecofone
 unzip /path/to/ecofone-server-deployment.zip
 ```
 
+Set the Kloudbean application root to `/var/www/ecofone` (the repository root), not `/var/www/ecofone/server`. The `client/` directory must be uploaded with the backend. The server cannot serve `/` if only the `server/` directory is deployed.
+
 ---
 
 ### 3. Install Dependencies
-Run npm install in both root/server and client:
+Run the install and production build from the repository root:
 ```bash
-# Install Server dependencies (including SQLite)
-cd /var/www/ecofone/server
-npm install --production
-
-# Optional: If you ever rebuild the client on server:
-cd /var/www/ecofone/client
+cd /var/www/ecofone
 npm install
 npm run build
 ```
@@ -47,11 +53,11 @@ npm run build
 ---
 
 ### 4. Configure Environment Variables (Optional)
-Create or edit `/var/www/ecofone/server/.env`:
+Create `/var/www/ecofone/.env` from `.env.example`:
 ```env
 PORT=5000
 NODE_ENV=production
-JWT_SECRET=ecofone_jwt_secret_key_2026_enterprise_pos
+JWT_SECRET=replace-with-a-long-random-secret
 ```
 
 ---
@@ -62,20 +68,29 @@ We recommend **PM2** for process management, auto-restarts, and zero-downtime re
 # Install PM2 globally
 sudo npm install -g pm2
 
-# Start server from the server directory
-cd /var/www/ecofone/server
-pm2 start src/index.js --name "ecofone-pos"
+# Start the single SQLite-backed process from the repository root
+cd /var/www/ecofone
+pm2 start ecosystem.config.cjs
 
 # Ensure PM2 starts automatically on server reboot
 pm2 startup
 pm2 save
 ```
 
+SQLite is configured for WAL mode, a 5-second lock wait, and a memory cache. This allows concurrent reads while writes remain serialized for consistency. Keep sale, stock transfer, return, and purchase operations inside their existing transactions, and keep the database on persistent local storage. For multiple application servers or sustained high write volume, migrate the database to PostgreSQL or MySQL before scaling horizontally.
+
 To monitor logs:
 ```bash
 pm2 logs ecofone-pos
 pm2 status
 ```
+
+Verify the live alias after deployment:
+```bash
+curl -i https://your-domain.example/api/health
+curl -I https://your-domain.example/
+```
+The first command must return JSON containing `"database":"connected"`; the second must return the frontend HTML. If `/` works but `/api/health` returns an HTML page, the domain/reverse proxy is serving only the frontend and is not forwarding `/api/*` to the Node process. If `/api/health` returns `503`, check that `server/data` is writable and that the deployed database file exists.
 
 ---
 

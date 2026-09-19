@@ -28,5 +28,4 @@ Thumbs.db
 *.db-wal
 *.backup*
 
-.vercel
 scratch/

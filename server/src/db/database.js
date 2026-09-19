@@ -2,40 +2,19 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const isVercel = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-let dbPath;
-
-if (isVercel) {
-  const tmpPath = path.join('/tmp', 'ecofone.db');
-  const possiblePaths = [
-    path.resolve(__dirname, '../../data/ecofone.db'),
-    path.resolve(process.cwd(), 'server/data/ecofone.db'),
-    path.join('/var/task', 'server/data/ecofone.db'),
-    path.join(__dirname, 'ecofone.db')
-  ];
-  const bundledDb = possiblePaths.find(p => fs.existsSync(p));
-  if (!fs.existsSync(tmpPath)) {
-    if (bundledDb) {
-      try {
-        fs.copyFileSync(bundledDb, tmpPath);
-      } catch (e) {
-        console.error('Failed to copy bundled db to /tmp:', e);
-      }
-    }
-  }
-  dbPath = tmpPath;
-} else {
-  const dbDir = path.resolve(__dirname, '../../data');
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
-  dbPath = path.join(dbDir, 'ecofone.db');
+const dbDir = path.resolve(__dirname, '../../data');
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
 }
+const dbPath = path.join(dbDir, 'ecofone.db');
 
 const db = new Database(dbPath);
 
-// Enable WAL mode or DELETE mode on Vercel, and Foreign Keys
-db.pragma(isVercel ? 'journal_mode = DELETE' : 'journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+db.pragma('cache_size = -64000');
+db.pragma('temp_store = MEMORY');
 db.pragma('foreign_keys = ON');
 
 function initSchema() {
@@ -159,6 +138,9 @@ function initSchema() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_phone_inventory_imei1 ON phone_inventory(imei1);
+    CREATE INDEX IF NOT EXISTS idx_phone_inventory_imei2 ON phone_inventory(imei2);
+    CREATE INDEX IF NOT EXISTS idx_phone_inventory_serial ON phone_inventory(serial_number);
+    CREATE INDEX IF NOT EXISTS idx_phone_inventory_product_id ON phone_inventory(internal_product_id);
     CREATE INDEX IF NOT EXISTS idx_phone_inventory_store ON phone_inventory(current_store_id);
     CREATE INDEX IF NOT EXISTS idx_phone_inventory_status ON phone_inventory(stock_status);
 
@@ -233,6 +215,7 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_sales_store ON sales(store_id);
     CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);
     CREATE INDEX IF NOT EXISTS idx_sales_invoice ON sales(invoice_number);
+    CREATE INDEX IF NOT EXISTS idx_sales_number ON sales(sale_number);
 
     -- Sale Items
     CREATE TABLE IF NOT EXISTS sale_items (
