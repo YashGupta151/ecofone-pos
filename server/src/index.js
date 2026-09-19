@@ -34,11 +34,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health Check
 app.get('/api/health', (req, res) => {
+  const db = require('./db/database');
+  const count = db.prepare("SELECT count(*) as c FROM stores WHERE status = 'active'").get()?.c || 1;
   res.json({
     status: 'healthy',
     application: 'Ecofone POS & Multi-Store Management Backend',
     version: '1.0.0',
-    storesCount: 12,
+    storesCount: count,
     timestamp: new Date().toISOString()
   });
 });

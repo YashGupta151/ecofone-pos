@@ -26,6 +26,7 @@ Thumbs.db
 *.db-journal
 *.db-shm
 *.db-wal
+*.backup*
 
 .vercel
 scratch/
