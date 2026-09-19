@@ -52,7 +52,7 @@ router.get('/sales', authenticateToken, (req, res) => {
       COUNT(sa.id) as sales_count,
       SUM(sa.grand_total) as revenue,
       SUM(sa.total_tax) as tax,
-      SUM(si.selling_price - si.unit_cost) as profit
+      SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))) as profit
     FROM sales sa
     JOIN sale_items si ON sa.id = si.sale_id
     ${where}
@@ -69,7 +69,7 @@ router.get('/sales', authenticateToken, (req, res) => {
         COUNT(DISTINCT sa.id) as sales_count,
         COUNT(si.id) as units_sold,
         COALESCE(SUM(sa.grand_total), 0) as revenue,
-        COALESCE(SUM(si.selling_price - si.unit_cost), 0) as gross_profit
+        COALESCE(SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))), 0) as gross_profit
       FROM stores s
       LEFT JOIN sales sa ON s.id = sa.store_id AND sa.status = 'COMPLETED'
         ${date_from ? "AND DATE(sa.sale_date, '+5 hours', '+30 minutes') >= ?" : ''}
@@ -86,7 +86,7 @@ router.get('/sales', authenticateToken, (req, res) => {
       si.brand,
       COUNT(si.id) as units_sold,
       SUM(si.final_price) as revenue,
-      SUM(si.selling_price - si.unit_cost) as gross_profit
+      SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))) as gross_profit
     FROM sale_items si
     JOIN sales sa ON si.sale_id = sa.id
     ${where}
@@ -138,11 +138,11 @@ router.get('/profit-loss', authenticateToken, requireAdmin, (req, res) => {
     SELECT 
       COUNT(DISTINCT sa.id) as total_orders,
       COUNT(si.id) as total_phones_sold,
-      COALESCE(SUM(si.selling_price - si.discount), 0) as net_sales_revenue,
+      COALESCE(SUM(si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)), 0) as net_sales_revenue,
       COALESCE(SUM(si.total_tax), 0) as tax_collected,
       COALESCE(SUM(si.final_price), 0) as total_gross_billed,
-      COALESCE(SUM(si.unit_cost), 0) as total_cogs, -- Actual stored phone cost!
-      COALESCE(SUM((si.selling_price - si.discount) - si.unit_cost), 0) as gross_profit
+      COALESCE(SUM(si.unit_cost * COALESCE(si.quantity, 1)), 0) as total_cogs, -- Actual stored cost
+      COALESCE(SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))), 0) as gross_profit
     FROM sales sa
     JOIN sale_items si ON sa.id = si.sale_id
     ${saleWhere}
@@ -179,9 +179,9 @@ router.get('/profit-loss', authenticateToken, requireAdmin, (req, res) => {
       s.id as store_id, s.name as store_name, s.code as store_code, s.city,
       COUNT(DISTINCT sa.id) as total_sales,
       COUNT(si.id) as phones_sold,
-      COALESCE(SUM(si.selling_price - si.discount), 0) as revenue,
-      COALESCE(SUM(si.unit_cost), 0) as cost_of_goods,
-      COALESCE(SUM((si.selling_price - si.discount) - si.unit_cost), 0) as gross_profit,
+      COALESCE(SUM(si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)), 0) as revenue,
+      COALESCE(SUM(si.unit_cost * COALESCE(si.quantity, 1)), 0) as cost_of_goods,
+      COALESCE(SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))), 0) as gross_profit,
       (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.store_id = s.id ${date_from ? 'AND e.expense_date >= ?' : ''} ${date_to ? 'AND e.expense_date <= ?' : ''}) as store_expenses
     FROM stores s
     LEFT JOIN sales sa ON s.id = sa.store_id AND sa.status = 'COMPLETED'
@@ -286,7 +286,7 @@ router.get('/employee-performance', authenticateToken, requireAdmin, (req, res) 
       COALESCE(SUM(sa.grand_total), 0) as total_revenue,
       COALESCE(SUM(sa.discount_total), 0) as total_discounts_given,
       COALESCE(AVG(sa.grand_total), 0) as average_ticket_size,
-      COALESCE(SUM(si.selling_price - si.unit_cost), 0) as gross_profit_generated
+      COALESCE(SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))), 0) as gross_profit_generated
     FROM users u
     JOIN stores s ON u.assigned_store_id = s.id
     LEFT JOIN sales sa ON u.id = sa.employee_id AND sa.status = 'COMPLETED'

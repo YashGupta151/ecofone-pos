@@ -31,7 +31,7 @@ router.get('/', authenticateToken, (req, res) => {
       COUNT(si.id) as today_phones_sold,
       COALESCE(SUM(sa.grand_total), 0) as today_revenue,
       COALESCE(SUM(sa.total_tax), 0) as today_tax,
-      COALESCE(SUM(si.selling_price - si.unit_cost), 0) as today_profit
+      COALESCE(SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))), 0) as today_profit
     FROM sales sa
     LEFT JOIN sale_items si ON sa.id = si.sale_id
     WHERE sa.status = 'COMPLETED' AND DATE(sa.sale_date, '+5 hours', '+30 minutes') = DATE('now', '+5 hours', '+30 minutes') ${storeFilter}
@@ -52,8 +52,8 @@ router.get('/', authenticateToken, (req, res) => {
       COUNT(si.id) as total_phones_sold,
       COALESCE(SUM(sa.grand_total), 0) as total_revenue,
       COALESCE(SUM(sa.total_tax), 0) as total_tax,
-      COALESCE(SUM(si.unit_cost), 0) as total_cogs,
-      COALESCE(SUM(si.selling_price - si.unit_cost), 0) as total_profit
+      COALESCE(SUM(si.unit_cost * COALESCE(si.quantity, 1)), 0) as total_cogs,
+      COALESCE(SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))), 0) as total_profit
     FROM sales sa
     LEFT JOIN sale_items si ON sa.id = si.sale_id
     WHERE sa.status = 'COMPLETED' ${dateFilter} ${storeFilter}
@@ -103,8 +103,8 @@ router.get('/', authenticateToken, (req, res) => {
         COUNT(DISTINCT sa.id) as sales_count,
         COUNT(si.id) as phones_sold,
         COALESCE(SUM(sa.grand_total), 0) as revenue,
-        COALESCE(SUM(si.unit_cost), 0) as cost,
-        COALESCE(SUM(si.selling_price - si.unit_cost), 0) as profit,
+        COALESCE(SUM(si.unit_cost * COALESCE(si.quantity, 1)), 0) as cost,
+        COALESCE(SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))), 0) as profit,
         (SELECT COUNT(*) FROM phone_inventory p WHERE p.current_store_id = s.id AND p.stock_status = 'AVAILABLE') as inventory_count
       FROM stores s
       LEFT JOIN sales sa ON s.id = sa.store_id AND sa.status = 'COMPLETED' ${dateFilter}
@@ -120,7 +120,7 @@ router.get('/', authenticateToken, (req, res) => {
       DATE(sa.sale_date, '+5 hours', '+30 minutes') as date,
       COUNT(DISTINCT sa.id) as orders,
       SUM(sa.grand_total) as revenue,
-      SUM(si.selling_price - si.unit_cost) as profit
+      SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))) as profit
     FROM sales sa
     JOIN sale_items si ON sa.id = si.sale_id
     WHERE sa.status = 'COMPLETED' AND sa.sale_date >= DATE('now', '+5 hours', '+30 minutes', '-30 days') ${storeFilter}

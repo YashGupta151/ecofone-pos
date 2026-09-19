@@ -11,7 +11,7 @@ router.get('/', authenticateToken, (req, res) => {
       (SELECT COUNT(*) FROM phone_inventory p WHERE p.current_store_id = s.id AND p.stock_status = 'SOLD') as total_sold_count,
       (SELECT COUNT(*) FROM users u WHERE u.assigned_store_id = s.id AND u.status = 'active') as employee_count,
       (SELECT COALESCE(SUM(sa.grand_total), 0) FROM sales sa WHERE sa.store_id = s.id AND sa.status = 'COMPLETED') as total_revenue,
-      (SELECT COALESCE(SUM(si.selling_price - si.unit_cost), 0) 
+      (SELECT COALESCE(SUM((si.selling_price * COALESCE(si.quantity, 1) - COALESCE(si.discount, 0)) - (si.unit_cost * COALESCE(si.quantity, 1))), 0) 
        FROM sale_items si 
        JOIN sales sa ON si.sale_id = sa.id 
        WHERE sa.store_id = s.id AND sa.status = 'COMPLETED') as total_profit
