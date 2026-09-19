@@ -188,15 +188,9 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                     <span>Subtotal:</span>
                     <span>{formatCurrency(sale?.subtotal)}</span>
                   </div>
-                  {phoneMargin > 0 && (
-                    <div className="flex justify-between text-[9px] text-slate-600">
-                      <span>Phone Margin (Diff):</span>
-                      <span>{formatCurrency(phoneMargin)}</span>
-                    </div>
-                  )}
                   {phoneTax > 0 && (
                     <div className="flex justify-between text-[9px] text-emerald-700">
-                      <span>GST (5% on Margin):</span>
+                      <span>Phone (GST 5%) :</span>
                       <span>+{formatCurrency(phoneTax)}</span>
                     </div>
                   )}
@@ -481,15 +475,9 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
                       <span>Subtotal (Items):</span>
                       <span className="font-medium">{formatCurrency(sale?.subtotal)}</span>
                     </div>
-                    {phoneMargin > 0 && (
-                      <div className="flex justify-between text-slate-700 font-medium">
-                        <span>Taxable Margin (Phones Diff):</span>
-                        <span className="font-semibold">{formatCurrency(phoneMargin)}</span>
-                      </div>
-                    )}
                     {phoneTax > 0 && (
                       <div className="flex justify-between text-slate-600 text-[10px]">
-                        <span>Phone GST (5% on Margin):</span>
+                        <span>Phone (GST 5%) :</span>
                         <span className="font-semibold text-emerald-800">+{formatCurrency(phoneTax)}</span>
                       </div>
                     )}
