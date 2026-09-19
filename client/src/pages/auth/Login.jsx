@@ -122,7 +122,7 @@ export default function Login() {
 
         {/* Footer info */}
         <p className="text-center text-xs text-slate-500 mt-6">
-          Ecofone Retail Operations • Centralized 12-Store POS System
+          Ecofone Retail Operations • Centralized Multi-Store POS System
         </p>
 
       </div>

@@ -19,6 +19,7 @@ export default function Header({ toggleSidebar, isSidebarOpen }) {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [showNotif, setShowNotif] = useState(false);
+  const [storesCount, setStoresCount] = useState(null);
 
   useEffect(() => {
     async function loadNotifications() {
@@ -32,7 +33,17 @@ export default function Header({ toggleSidebar, isSidebarOpen }) {
       }
     }
     loadNotifications();
-  }, []);
+
+    if (isAdmin) {
+      apiFetch('/stores')
+        .then(res => {
+          if (res.success && Array.isArray(res.stores)) {
+            setStoresCount(res.stores.length);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAdmin]);
 
   const posPath = isAdmin ? '/admin/pos' : '/employee/pos';
 
@@ -57,7 +68,9 @@ export default function Header({ toggleSidebar, isSidebarOpen }) {
             <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
               <Building2 className="w-3.5 h-3.5 text-emerald-600" />
               {isAdmin ? (
-                <span className="text-emerald-700 font-bold">Central Management — All 12 Stores</span>
+                <span className="text-emerald-700 font-bold">
+                  Central Management — {storesCount !== null ? `${storesCount} Store${storesCount === 1 ? '' : 's'}` : 'All Stores'}
+                </span>
               ) : (
                 <span>Store: <strong className="text-slate-900">{user?.store_name || user?.store_code || 'Assigned Store'}</strong></span>
               )}

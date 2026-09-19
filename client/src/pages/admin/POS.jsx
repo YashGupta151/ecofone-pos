@@ -581,7 +581,7 @@ export default function POS() {
           </div>
         </div>
 
-        {/* Store Selector (Admin can switch between all 12 stores, employee locked to assigned store) */}
+        {/* Store Selector (Admin can switch between active stores, employee locked to assigned store) */}
         <div className="flex items-center gap-2">
           <Building2 className="w-4 h-4 text-slate-400" />
           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Store:</span>

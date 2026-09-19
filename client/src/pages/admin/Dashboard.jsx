@@ -98,7 +98,7 @@ export default function Dashboard() {
             Executive Business Dashboard
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time analytics across all 12 Ecofone smartphone retail stores in India
+            Real-time analytics across all active Ecofone smartphone retail stores in India
           </p>
         </div>
 
@@ -162,7 +162,7 @@ export default function Dashboard() {
         />
         <StatCard
           title="Active Stores"
-          value={`${data?.activeStoresCount || 12} Outlets`}
+          value={`${data?.activeStoresCount ?? (data?.storePerformance?.length || 1)} Outlets`}
           subtitle="Connected across India"
           icon={Store}
           color="slate"
@@ -183,13 +183,13 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* SECTION 38: Store Comparison Table (12 Physical Stores Matrix) */}
+      {/* SECTION 38: Store Comparison Table (Physical Stores Matrix) */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="font-extrabold text-sm sm:text-base text-slate-900 tracking-tight flex items-center gap-2">
               <Building2 className="w-4 h-4 text-emerald-600" />
-              12-Store Performance & Inventory Comparison (Section 38)
+              Store Performance & Inventory Comparison
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               Live multi-store ranking by sales revenue, gross margins, phones sold, and on-hand inventory

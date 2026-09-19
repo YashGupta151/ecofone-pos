@@ -416,7 +416,7 @@ export default function Accessories() {
               onChange={(e) => setSelectedStoreId(e.target.value)}
               className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-hidden"
             >
-              <option value="">All 12 Stores</option>
+              <option value="">All Stores</option>
               {stores.map(s => (
                 <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
               ))}

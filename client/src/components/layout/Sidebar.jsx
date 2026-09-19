@@ -1,6 +1,7 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../services/api';
 import {
   LayoutDashboard,
   Store,
@@ -25,11 +26,29 @@ import {
 
 export default function Sidebar({ isOpen, setIsOpen }) {
   const { user, logout, isAdmin, canAccess } = useAuth();
+  const [storesCount, setStoresCount] = useState(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (isAdmin) {
+      apiFetch('/stores')
+        .then(res => {
+          if (res.success && Array.isArray(res.stores)) {
+            setStoresCount(res.stores.length);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAdmin, location.pathname]);
 
   // Admin Nav items according to Section 28
   const adminNav = [
     { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-    { label: 'Stores (12)', path: '/admin/stores', icon: Store },
+    { 
+      label: storesCount !== null ? `Stores (${storesCount})` : 'Stores', 
+      path: '/admin/stores', 
+      icon: Store 
+    },
     { label: 'Employees', path: '/admin/employees', icon: Users },
     { label: 'Inventory (IMEI)', path: '/admin/inventory', icon: Smartphone },
     { label: 'Accessories (New)', path: '/admin/accessories', icon: Package },

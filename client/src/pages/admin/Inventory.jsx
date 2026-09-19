@@ -314,7 +314,7 @@ export default function Inventory() {
             onChange={(e) => setSelectedStore(e.target.value)}
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium"
           >
-            <option value="">All 12 Stores</option>
+            <option value="">All Stores</option>
             {meta.stores.map(s => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
