@@ -15,7 +15,6 @@ export default function InvoiceModal({ invoiceData, onClose, onNewSale }) {
   const hasPhones = phoneItems.length > 0;
   const hasAccessories = accessoryItems.length > 0;
 
-  const phoneMargin = phoneItems.reduce((acc, i) => acc + (parseFloat(i.taxable_amount) || 0), 0);
   const phoneTax = phoneItems.reduce((acc, i) => acc + (parseFloat(i.total_tax) || 0), 0);
 
   const accessoryTaxable = accessoryItems.reduce((acc, i) => acc + (parseFloat(i.taxable_amount) || 0), 0);

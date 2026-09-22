@@ -416,7 +416,6 @@ export default function POS() {
   const accessoryItems = cartWithMargin.filter(i => i.item_type === 'accessory');
 
   const phoneSubtotal = phoneItems.reduce((acc, i) => acc + i.sPrice, 0);
-  const phoneDifference = phoneItems.reduce((acc, i) => acc + i.difference, 0);
   const phoneTax = phoneItems.reduce((acc, i) => acc + i.itemTax, 0);
 
   const accSubtotalInclusive = accessoryItems.reduce((acc, i) => acc + i.sPrice, 0);
@@ -1478,11 +1477,7 @@ export default function POS() {
                     <span>{formatCurrency(phoneSubtotal)}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
-                    <span>Phones Margin (Difference):</span>
-                    <span className="font-medium text-emerald-800">{formatCurrency(phoneDifference)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Phones GST ({systemTaxRate}% on Margin):</span>
+                    <span>Phone (GST {systemTaxRate}%):</span>
                     <span className="font-bold text-emerald-700">+{formatCurrency(phoneTax)}</span>
                   </div>
                 </>
