@@ -3,6 +3,42 @@ const router = express.Router();
 const db = require('../db/database');
 const { authenticateToken, requireAdmin, logAudit } = require('../middleware/auth');
 
+// Robust, collision-free internal product ID generator
+function generateNextPhoneProductId(database) {
+  const row = database.prepare(`
+    SELECT MAX(seq) as max_seq FROM (
+      SELECT id as seq FROM phone_inventory
+      UNION ALL
+      SELECT CAST(SUBSTR(internal_product_id, 8) AS INTEGER) as seq 
+      FROM phone_inventory 
+      WHERE internal_product_id LIKE 'ECO-PH-%'
+    )
+  `).get();
+
+  let nextSeq = (row && row.max_seq && !isNaN(row.max_seq)) ? Number(row.max_seq) + 1 : 1;
+  let candidate = `ECO-PH-${String(nextSeq).padStart(5, '0')}`;
+
+  while (database.prepare(`SELECT 1 FROM phone_inventory WHERE internal_product_id = ?`).get(candidate)) {
+    nextSeq++;
+    candidate = `ECO-PH-${String(nextSeq).padStart(5, '0')}`;
+  }
+  return candidate;
+}
+
+function getNextPhoneSeq(database) {
+  const row = database.prepare(`
+    SELECT MAX(seq) as max_seq FROM (
+      SELECT id as seq FROM phone_inventory
+      UNION ALL
+      SELECT CAST(SUBSTR(internal_product_id, 8) AS INTEGER) as seq 
+      FROM phone_inventory 
+      WHERE internal_product_id LIKE 'ECO-PH-%'
+    )
+  `).get();
+
+  return (row && row.max_seq && !isNaN(row.max_seq)) ? Number(row.max_seq) + 1 : 1;
+}
+
 // GET /api/inventory (List with filters)
 router.get('/', authenticateToken, (req, res) => {
   const { store_id, brand, condition_grade, stock_status, search, page = 1, limit = 50 } = req.query;
@@ -245,9 +281,8 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ success: false, message: 'Store must be assigned.' });
   }
 
-  // Generate internal product ID
-  const countRow = db.prepare(`SELECT COUNT(*) as cnt FROM phone_inventory`).get();
-  const internalId = `ECO-PH-${String(countRow.cnt + 1).padStart(5, '0')}`;
+  // Generate guaranteed unique internal product ID
+  const internalId = generateNextPhoneProductId(db);
 
   try {
     const info = db.prepare(`
@@ -277,6 +312,12 @@ router.post('/', authenticateToken, (req, res) => {
       internal_product_id: internalId
     });
   } catch (err) {
+    if (err.message && err.message.includes('UNIQUE constraint failed: phone_inventory.imei1')) {
+      return res.status(400).json({ success: false, message: `IMEI 1 "${imei1}" is already registered in inventory.` });
+    }
+    if (err.message && err.message.includes('UNIQUE constraint failed: phone_inventory.imei2')) {
+      return res.status(400).json({ success: false, message: `IMEI 2 "${imei2}" is already registered in inventory.` });
+    }
     res.status(400).json({ success: false, message: err.message });
   }
 });
@@ -332,8 +373,7 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
   const failedRows = [];
   const seenInBatch = new Set();
 
-  let countRow = db.prepare(`SELECT COUNT(*) as cnt FROM phone_inventory`).get();
-  let nextSeq = (countRow ? countRow.cnt : 0) + 1;
+  let nextSeq = getNextPhoneSeq(db);
 
   const insertStmt = db.prepare(`
     INSERT INTO phone_inventory (
@@ -449,9 +489,10 @@ router.post('/bulk-upload', authenticateToken, (req, res) => {
           : systemTaxRate;
         const difference = Math.max(0, sellingPrice - pCost);
         const taxAmount = Math.round((difference * (tRate / 100)) * 100) / 100;
-        const finalPrice = Math.max(0, (sellingPrice + taxAmount) - disc);
-
-        const internalId = `ECO-PH-${String(nextSeq++).padStart(5, '0')}`;
+        let internalId = `ECO-PH-${String(nextSeq++).padStart(5, '0')}`;
+        while (db.prepare(`SELECT 1 FROM phone_inventory WHERE internal_product_id = ?`).get(internalId)) {
+          internalId = `ECO-PH-${String(nextSeq++).padStart(5, '0')}`;
+        }
         const conditionGrade = dev.condition_grade || dev.grade || 'Grade A';
         const batteryHealth = dev.battery_health ? String(dev.battery_health).trim() : '90%';
         const variant = dev.variant || dev.storage || '';
