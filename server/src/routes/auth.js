@@ -67,11 +67,26 @@ router.get('/me', authenticateToken, (req, res) => {
   res.json({ success: true, user: req.user });
 });
 
+function isValidPassword(password) {
+  if (!password || password.length < 8) return false;
+  const hasNumber = /\d/.test(password);
+  const hasUpper = /[A-Z]/.test(password);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>\-_=+[\]\\/;'`~]/.test(password);
+  return Boolean(hasNumber && hasUpper && hasSpecial);
+}
+
 // POST /api/auth/change-password
 router.post('/change-password', authenticateToken, (req, res) => {
   const { current_password, new_password } = req.body;
   if (!current_password || !new_password) {
     return res.status(400).json({ success: false, message: 'Current and new password required.' });
+  }
+
+  if (!isValidPassword(new_password)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 8 characters long and contain at least 1 uppercase letter, 1 number, and 1 special character.'
+    });
   }
 
   const user = db.prepare(`SELECT password_hash FROM users WHERE id = ?`).get(req.user.id);

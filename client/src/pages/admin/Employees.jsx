@@ -5,6 +5,59 @@ import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import PermissionsModal from '../../components/employees/PermissionsModal';
 
+const checkPasswordRequirements = (pw) => {
+  const password = pw || '';
+  return {
+    minLength: password.length >= 8,
+    hasNumber: /\d/.test(password),
+    hasUpper: /[A-Z]/.test(password),
+    hasSpecial: /[!@#$%^&*(),.?":{}|<>\-_=+[\]\\/;'`~]/.test(password),
+  };
+};
+
+const isPasswordValid = (pw) => {
+  const reqs = checkPasswordRequirements(pw);
+  return reqs.minLength && reqs.hasNumber && reqs.hasUpper && reqs.hasSpecial;
+};
+
+function PasswordHint({ password }) {
+  const reqs = checkPasswordRequirements(password);
+  return (
+    <div className="mt-1.5 p-2 bg-slate-50 rounded-lg border border-slate-200 text-[11px] space-y-1">
+      <div className="font-semibold text-slate-600 flex items-center justify-between">
+        <span>Password requirements:</span>
+        <span className="text-[10px] text-slate-400">Must satisfy all 4</span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px]">
+        <div className={`flex items-center gap-1.5 ${reqs.minLength ? 'text-emerald-700 font-semibold' : 'text-slate-500'}`}>
+          <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] ${reqs.minLength ? 'bg-emerald-100 text-emerald-700 font-bold' : 'bg-slate-200 text-slate-500'}`}>
+            {reqs.minLength ? '✓' : '•'}
+          </span>
+          <span>At least 8 characters</span>
+        </div>
+        <div className={`flex items-center gap-1.5 ${reqs.hasUpper ? 'text-emerald-700 font-semibold' : 'text-slate-500'}`}>
+          <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] ${reqs.hasUpper ? 'bg-emerald-100 text-emerald-700 font-bold' : 'bg-slate-200 text-slate-500'}`}>
+            {reqs.hasUpper ? '✓' : '•'}
+          </span>
+          <span>1 uppercase letter (A-Z)</span>
+        </div>
+        <div className={`flex items-center gap-1.5 ${reqs.hasNumber ? 'text-emerald-700 font-semibold' : 'text-slate-500'}`}>
+          <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] ${reqs.hasNumber ? 'bg-emerald-100 text-emerald-700 font-bold' : 'bg-slate-200 text-slate-500'}`}>
+            {reqs.hasNumber ? '✓' : '•'}
+          </span>
+          <span>1 number (0-9)</span>
+        </div>
+        <div className={`flex items-center gap-1.5 ${reqs.hasSpecial ? 'text-emerald-700 font-semibold' : 'text-slate-500'}`}>
+          <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] ${reqs.hasSpecial ? 'bg-emerald-100 text-emerald-700 font-bold' : 'bg-slate-200 text-slate-500'}`}>
+            {reqs.hasSpecial ? '✓' : '•'}
+          </span>
+          <span>1 special char (!@#$...)</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Employees() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
@@ -27,6 +80,8 @@ export default function Employees() {
   const [permissionsTargetEmp, setPermissionsTargetEmp] = useState(null);
   const [targetUser, setTargetUser] = useState(null);
   const [newPassword, setNewPassword] = useState('');
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showResetPasswordInput, setShowResetPasswordInput] = useState(false);
 
   const togglePasswordVisibility = (id) => {
     setRevealedPasswords(prev => ({
@@ -112,6 +167,11 @@ export default function Employees() {
   const handleCreate = async (e) => {
     e.preventDefault();
 
+    if (!isPasswordValid(formData.password)) {
+      alert('Password must be at least 8 characters long and contain at least 1 uppercase letter, 1 number, and 1 special character.');
+      return;
+    }
+
     if (formData.phone) {
       const cleanPhone = formData.phone.replace(/\D/g, '');
       if (cleanPhone.length !== 10) {
@@ -153,8 +213,8 @@ export default function Employees() {
 
   const handleResetPassword = async (e) => {
     e.preventDefault();
-    if (!newPassword || newPassword.length < 6) {
-      alert('Password must be at least 6 characters.');
+    if (!isPasswordValid(newPassword)) {
+      alert('Password must be at least 8 characters long and contain at least 1 uppercase letter, 1 number, and 1 special character.');
       return;
     }
 
@@ -166,6 +226,8 @@ export default function Employees() {
       if (res.success) {
         setShowResetModal(false);
         alert(`Password for ${targetUser.username} has been reset successfully.`);
+      } else {
+        alert(res.message || 'Failed to reset password');
       }
     } catch (err) {
       alert(err.message);
@@ -529,16 +591,6 @@ export default function Employees() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-bold text-slate-600 block mb-1">Initial Password *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono"
-                  />
-                </div>
-                <div>
                   <label className="font-bold text-slate-600 block mb-1">Phone (10 Digits)</label>
                   <input
                     type="tel"
@@ -549,9 +601,6 @@ export default function Employees() {
                     className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="font-bold text-slate-600 block mb-1">Role *</label>
                   <select
@@ -563,6 +612,32 @@ export default function Employees() {
                     <option value="admin">Super Admin / CEO</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Initial Password *</label>
+                <div className="relative">
+                  <input
+                    type={showCreatePassword ? "text" : "password"}
+                    required
+                    placeholder="Enter strong password..."
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full pl-3 pr-10 py-2 bg-slate-50 border rounded-lg font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCreatePassword(!showCreatePassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
+                    title={showCreatePassword ? "Hide password" : "View password 👁️"}
+                  >
+                    {showCreatePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <PasswordHint password={formData.password} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="font-bold text-slate-600 block mb-1">Assigned Branch *</label>
                   <select
@@ -640,15 +715,26 @@ export default function Employees() {
 
             <form onSubmit={handleResetPassword} className="space-y-3">
               <div>
-                <label className="font-bold text-slate-600 block mb-1">New Password (min 6 chars)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="New password..."
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono"
-                />
+                <label className="font-bold text-slate-600 block mb-1">New Password *</label>
+                <div className="relative">
+                  <input
+                    type={showResetPasswordInput ? "text" : "password"}
+                    required
+                    placeholder="Enter new strong password..."
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full pl-3 pr-10 py-2 bg-slate-50 border rounded-lg font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPasswordInput(!showResetPasswordInput)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
+                    title={showResetPasswordInput ? "Hide password" : "View password 👁️"}
+                  >
+                    {showResetPasswordInput ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <PasswordHint password={newPassword} />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button

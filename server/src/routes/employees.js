@@ -80,12 +80,27 @@ router.get('/:id', authenticateToken, (req, res) => {
   res.json({ success: true, employee, sales, stats });
 });
 
+function isValidPassword(password) {
+  if (!password || password.length < 8) return false;
+  const hasNumber = /\d/.test(password);
+  const hasUpper = /[A-Z]/.test(password);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>\-_=+[\]\\/;'`~]/.test(password);
+  return Boolean(hasNumber && hasUpper && hasSpecial);
+}
+
 // POST /api/employees (Admin only)
 router.post('/', authenticateToken, requireAdmin, (req, res) => {
   const { employee_id, username, password, full_name, phone, email, address, role, assigned_store_id, status } = req.body;
 
   if (!username || !password || !full_name) {
     return res.status(400).json({ success: false, message: 'Username, password, and full name are required.' });
+  }
+
+  if (!isValidPassword(password)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 8 characters long and contain at least 1 uppercase letter, 1 number, and 1 special character.'
+    });
   }
 
   let cleanPhone = '';
@@ -149,8 +164,11 @@ router.patch('/:id/reset-password', authenticateToken, requireAdmin, (req, res) 
   const id = parseInt(req.params.id);
   const { new_password } = req.body;
 
-  if (!new_password || new_password.length < 6) {
-    return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
+  if (!isValidPassword(new_password)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 8 characters long and contain at least 1 uppercase letter, 1 number, and 1 special character.'
+    });
   }
 
   const salt = bcrypt.genSaltSync(10);
