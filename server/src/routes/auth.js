@@ -24,13 +24,76 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ success: false, message: 'Invalid username or password.' });
   }
 
+  // Check 24-hour lockout status
+  if (user.locked_until) {
+    const lockExpiry = new Date(user.locked_until);
+    const now = new Date();
+
+    if (lockExpiry > now) {
+      const remainingMs = lockExpiry.getTime() - now.getTime();
+      const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+      return res.status(403).json({
+        success: false,
+        accountLocked: true,
+        lockedUntil: user.locked_until,
+        message: `This account has been disabled for 24 hours due to 3 consecutive wrong password attempts. Please try again in ${remainingHours} hour${remainingHours > 1 ? 's' : ''} or contact an Administrator.`
+      });
+    } else {
+      // 24 hours have elapsed: automatically clear lock
+      db.prepare(`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`).run(user.id);
+      user.failed_login_attempts = 0;
+      user.locked_until = null;
+    }
+  }
+
   if (user.status !== 'active') {
     return res.status(403).json({ success: false, message: 'Your account is disabled. Please contact Admin.' });
   }
 
   const match = bcrypt.compareSync(password, user.password_hash);
   if (!match) {
-    return res.status(401).json({ success: false, message: 'Invalid username or password.' });
+    const currentAttempts = (user.failed_login_attempts || 0) + 1;
+
+    if (currentAttempts >= 3) {
+      // Lock for 24 hours
+      const lockUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      db.prepare(`
+        UPDATE users 
+        SET failed_login_attempts = ?, locked_until = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `).run(currentAttempts, lockUntil, user.id);
+
+      logAudit(user.id, user.username, 'ACCOUNT_LOCKED', user.assigned_store_id, 'USER', user.id, {
+        reason: 'Account disabled for 24 hours after 3 wrong password attempts',
+        locked_until: lockUntil
+      }, req);
+
+      return res.status(403).json({
+        success: false,
+        accountLocked: true,
+        lockedUntil: lockUntil,
+        message: 'Password entered incorrectly 3 times. This account has been disabled for 24 hours. Please contact an Administrator.'
+      });
+    } else {
+      db.prepare(`
+        UPDATE users 
+        SET failed_login_attempts = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `).run(currentAttempts, user.id);
+
+      const remaining = 3 - currentAttempts;
+      return res.status(401).json({
+        success: false,
+        failedAttempts: currentAttempts,
+        remainingAttempts: remaining,
+        message: `Invalid username or password. You have ${remaining} attempt${remaining > 1 ? 's' : ''} remaining before your account is disabled for 24 hours.`
+      });
+    }
+  }
+
+  // Password matches: reset failed attempts if any
+  if (user.failed_login_attempts > 0 || user.locked_until) {
+    db.prepare(`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`).run(user.id);
   }
 
   const token = jwt.sign(

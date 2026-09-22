@@ -9,7 +9,7 @@ router.get('/', authenticateToken, (req, res) => {
   let query = `
     SELECT u.id, u.employee_id, u.username, u.full_name, u.phone, u.email, u.address,
            u.role, u.assigned_store_id, u.status, u.permissions, u.created_at,
-           u.plain_password,
+           u.plain_password, u.failed_login_attempts, u.locked_until,
            s.name as store_name, s.code as store_code, s.city as store_city,
            (SELECT COUNT(*) FROM sales WHERE employee_id = u.id AND status = 'COMPLETED') as sales_count,
            (SELECT COALESCE(SUM(grand_total), 0) FROM sales WHERE employee_id = u.id AND status = 'COMPLETED') as total_revenue
@@ -174,10 +174,15 @@ router.patch('/:id/reset-password', authenticateToken, requireAdmin, (req, res) 
   const salt = bcrypt.genSaltSync(10);
   const hash = bcrypt.hashSync(new_password, salt);
 
-  db.prepare(`UPDATE users SET password_hash = ?, plain_password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(hash, new_password.trim(), id);
-  logAudit(req.user.id, req.user.username, 'RESET_PASSWORD', null, 'USER', id, 'Admin reset user password', req);
+  db.prepare(`
+    UPDATE users 
+    SET password_hash = ?, plain_password = ?, failed_login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP 
+    WHERE id = ?
+  `).run(hash, new_password.trim(), id);
 
-  res.json({ success: true, message: 'Password reset successfully.' });
+  logAudit(req.user.id, req.user.username, 'RESET_PASSWORD', null, 'USER', id, 'Admin reset user password and unlocked account', req);
+
+  res.json({ success: true, message: 'Password reset successfully and account unlocked.' });
 });
 
 // PATCH /api/employees/:id/status (Admin only)
@@ -194,10 +199,40 @@ router.patch('/:id/status', authenticateToken, requireAdmin, (req, res) => {
     return res.status(400).json({ success: false, message: 'You cannot disable your own administrator account.' });
   }
 
-  db.prepare(`UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(status, id);
+  if (status === 'active') {
+    db.prepare(`
+      UPDATE users 
+      SET status = ?, failed_login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run(status, id);
+  } else {
+    db.prepare(`UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(status, id);
+  }
+
   logAudit(req.user.id, req.user.username, 'TOGGLE_EMPLOYEE_STATUS', null, 'USER', id, { status }, req);
 
   res.json({ success: true, message: `Account status updated to ${status}.` });
+});
+
+// PATCH /api/employees/:id/unlock (Admin only)
+router.patch('/:id/unlock', authenticateToken, requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const employee = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  if (!employee) {
+    return res.status(404).json({ success: false, message: 'Employee not found.' });
+  }
+
+  db.prepare(`
+    UPDATE users 
+    SET failed_login_attempts = 0, locked_until = NULL, status = 'active', updated_at = CURRENT_TIMESTAMP 
+    WHERE id = ?
+  `).run(id);
+
+  logAudit(req.user.id, req.user.username, 'UNLOCK_ACCOUNT', employee.assigned_store_id, 'USER', id, {
+    action: 'Admin unlocked account and reset failed login attempts'
+  }, req);
+
+  res.json({ success: true, message: `Account for ${employee.username} has been unlocked successfully.` });
 });
 
 // PUT /api/employees/:id/permissions (Admin only)

@@ -52,6 +52,8 @@ function initSchema() {
       assigned_store_id INTEGER,
       status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended')),
       permissions TEXT DEFAULT NULL,
+      failed_login_attempts INTEGER DEFAULT 0,
+      locked_until DATETIME DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (assigned_store_id) REFERENCES stores(id) ON DELETE SET NULL
@@ -710,8 +712,14 @@ try {
   if (!userCols.some(c => c.name === 'plain_password')) {
     db.exec(`ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT NULL;`);
   }
+  if (!userCols.some(c => c.name === 'failed_login_attempts')) {
+    db.exec(`ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0;`);
+  }
+  if (!userCols.some(c => c.name === 'locked_until')) {
+    db.exec(`ALTER TABLE users ADD COLUMN locked_until DATETIME DEFAULT NULL;`);
+  }
 } catch (e) {
-  console.error('Error adding plain_password column to users:', e);
+  console.error('Error adding auth security columns to users:', e);
 }
 
 db.DEFAULT_EMPLOYEE_PERMISSIONS = DEFAULT_EMPLOYEE_PERMISSIONS;

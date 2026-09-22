@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Lock, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Lock, User, ArrowRight, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -63,8 +63,19 @@ export default function Login() {
           </div>
 
           {error && (
-            <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
-              {error}
+            <div className={`mb-4 p-3.5 rounded-xl border flex items-start gap-2.5 text-xs font-medium ${
+              error.toLowerCase().includes('disabled') || error.toLowerCase().includes('locked')
+                ? 'bg-rose-50 border-rose-300 text-rose-900 shadow-xs'
+                : 'bg-amber-50 border-amber-300 text-amber-900'
+            }`}>
+              <ShieldAlert className={`w-4 h-4 shrink-0 mt-0.5 ${
+                error.toLowerCase().includes('disabled') || error.toLowerCase().includes('locked')
+                  ? 'text-rose-600'
+                  : 'text-amber-600'
+              }`} />
+              <div className="leading-relaxed">
+                {error}
+              </div>
             </div>
           )}
 

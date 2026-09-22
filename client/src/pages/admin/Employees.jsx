@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Search, Key, UserCheck, UserX, Phone, Mail, Building2, Eye, EyeOff, Copy, Check, X, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Users, Plus, Search, Key, UserCheck, UserX, Phone, Mail, Building2, Eye, EyeOff, Copy, Check, X, ShieldAlert, ShieldCheck, Unlock } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -161,6 +161,27 @@ export default function Employees() {
       }
     } catch (err) {
       alert(err.message || 'Error occurred while updating employee status.');
+    }
+  };
+
+  const handleUnlock = async (emp) => {
+    const confirmUnlock = window.confirm(
+      `Are you sure you want to UNLOCK this employee account?\n\n` +
+      `Employee: ${emp.full_name} (${emp.username})\n` +
+      `This will immediately clear the 24-hour lockout and reset failed password attempts.`
+    );
+    if (!confirmUnlock) return;
+
+    try {
+      const res = await apiFetch(`/employees/${emp.id}/unlock`, { method: 'PATCH' });
+      if (res.success) {
+        alert(`Account for ${emp.username} has been unlocked successfully!`);
+        fetchEmployees();
+      } else {
+        alert(res.message || 'Failed to unlock employee account.');
+      }
+    } catch (err) {
+      alert(err.message || 'Error occurred while unlocking account.');
     }
   };
 
@@ -355,10 +376,17 @@ export default function Employees() {
                   className={`transition ${emp.status !== 'active' ? 'bg-slate-50/70 opacity-80' : 'hover:bg-slate-50/70'}`}
                 >
                   <td className="py-3 px-4">
-                    <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                    <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5 flex-wrap">
                       <span>{emp.full_name}</span>
-                      {emp.status !== 'active' && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-700">Disabled</span>
+                      {emp.locked_until && new Date(emp.locked_until) > new Date() ? (
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+                          <ShieldAlert className="w-3 h-3 text-rose-600" />
+                          <span>Locked (24h)</span>
+                        </span>
+                      ) : (
+                        emp.status !== 'active' && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-700">Disabled</span>
+                        )
                       )}
                     </div>
                     <div className="text-[11px] text-slate-400">{emp.phone} • {emp.email}</div>
@@ -470,34 +498,58 @@ export default function Employees() {
                   </td>
 
                   <td className="py-3 px-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStatus(emp)}
-                      disabled={emp.role === 'admin' && emp.id === user?.id}
-                      title={
-                        emp.role === 'admin' && emp.id === user?.id
-                          ? 'Cannot disable own admin account'
-                          : emp.status === 'active'
-                          ? 'Click to Disable Employee Account'
-                          : 'Click to Enable Employee Account'
-                      }
-                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition shadow-2xs ${
-                        emp.status === 'active'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200'
-                          : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'
-                      } ${emp.role === 'admin' && emp.id === user?.id ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          emp.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'
-                        }`}
-                      ></span>
-                      <span>{emp.status === 'active' ? 'Active' : 'Disabled'}</span>
-                    </button>
+                    {emp.locked_until && new Date(emp.locked_until) > new Date() ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUnlock(emp)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 transition shadow-2xs cursor-pointer"
+                        title="Account locked for 24h due to 3 wrong password attempts. Click to Unlock now."
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+                        <span>Locked (24h)</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus(emp)}
+                        disabled={emp.role === 'admin' && emp.id === user?.id}
+                        title={
+                          emp.role === 'admin' && emp.id === user?.id
+                            ? 'Cannot disable own admin account'
+                            : emp.status === 'active'
+                            ? 'Click to Disable Employee Account'
+                            : 'Click to Enable Employee Account'
+                        }
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition shadow-2xs ${
+                          emp.status === 'active'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'
+                        } ${emp.role === 'admin' && emp.id === user?.id ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            emp.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'
+                          }`}
+                        ></span>
+                        <span>{emp.status === 'active' ? 'Active' : 'Disabled'}</span>
+                      </button>
+                    )}
                   </td>
 
                   <td className="py-3 px-4 text-center">
                     <div className="flex items-center justify-center gap-1">
+                      {/* Unlock Account Action Button if locked */}
+                      {emp.locked_until && new Date(emp.locked_until) > new Date() && (
+                        <button
+                          type="button"
+                          onClick={() => handleUnlock(emp)}
+                          className="p-1.5 text-amber-700 hover:text-white hover:bg-amber-600 rounded-lg transition border border-amber-300 bg-amber-50 shadow-2xs"
+                          title="Account is locked for 24h. Click to Unlock immediately."
+                        >
+                          <Unlock className="w-4 h-4" />
+                        </button>
+                      )}
+
                       {/* Enable/Disable Quick Action Toggle */}
                       <button
                         onClick={() => handleToggleStatus(emp)}
