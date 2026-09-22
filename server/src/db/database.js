@@ -43,6 +43,7 @@ function initSchema() {
       employee_id TEXT UNIQUE NOT NULL,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      plain_password TEXT DEFAULT NULL,
       full_name TEXT NOT NULL,
       phone TEXT,
       email TEXT,
@@ -701,6 +702,16 @@ function parseUserPermissions(permissionsStr, role = 'employee') {
   } catch (e) {
     return { ...DEFAULT_EMPLOYEE_PERMISSIONS };
   }
+}
+
+// Ensure plain_password column exists on users
+try {
+  const userCols = db.prepare(`PRAGMA table_info(users)`).all();
+  if (!userCols.some(c => c.name === 'plain_password')) {
+    db.exec(`ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT NULL;`);
+  }
+} catch (e) {
+  console.error('Error adding plain_password column to users:', e);
 }
 
 db.DEFAULT_EMPLOYEE_PERMISSIONS = DEFAULT_EMPLOYEE_PERMISSIONS;

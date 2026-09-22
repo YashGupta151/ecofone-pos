@@ -99,8 +99,8 @@ function seedDatabase() {
   // 6. Users: 1 CEO/Admin + 24 Employees (2 per store)
   db.exec(`DELETE FROM users`);
   const userStmt = db.prepare(`
-    INSERT INTO users (employee_id, username, password_hash, full_name, phone, email, address, role, assigned_store_id, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (employee_id, username, password_hash, plain_password, full_name, phone, email, address, role, assigned_store_id, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const crypto = require('crypto');
@@ -117,6 +117,7 @@ function seedDatabase() {
     'ECO-ADM-001',
     adminUsername,
     adminPassHash,
+    adminPassword,
     'Shubham Chauhan',
     '+91 98200 88888',
     'shubham@ecofone.in',
@@ -131,6 +132,7 @@ function seedDatabase() {
     'ECO-CEO-001',
     'gaurav',
     adminPassHash,
+    adminPassword,
     'Gaurav Shrivastava',
     '+91 98200 99999',
     'gaurav@ecofone.in',
@@ -143,17 +145,17 @@ function seedDatabase() {
   // 24 Store Employees
   const employeeNames = [
     ['Rajesh Kulkarni', 'Pooja Bhosle'],     // Store 1 (MUM-01)
-    ['Sunita Rao', 'Amit Jadhav'],           // Store 2 (MUM-02)
-    ['Vikas Sharma', 'Kavita Rawat'],        // Store 3 (DEL-01)
-    ['Neha Kapoor', 'Rohan Bhatia'],         // Store 4 (DEL-02)
-    ['Arun Kumar', 'Divya Murthy'],          // Store 5 (BLR-01)
-    ['Pooja Hegde', 'Naveen Gowda'],         // Store 6 (BLR-02)
-    ['Karthik Reddy', 'Swathi Rao'],         // Store 7 (HYD-01)
-    ['Suresh Raman', 'Meena Sundaram'],      // Store 8 (CHN-01)
-    ['Anil Deshmukh', 'Sneha Shinde'],       // Store 9 (PUN-01)
-    ['Debashis Sen', 'Riya Mukherjee'],      // Store 10 (KOL-01)
-    ['Jignesh Patel', 'Bhavna Shah'],        // Store 11 (AMD-01)
-    ['Manish Rathore', 'Priyanka Shekhawat'] // Store 12 (JAI-01)
+    ['Amit Sharma', 'Neha Verma'],           // Store 2 (DEL-01)
+    ['Karthik Rao', 'Divya Suresh'],         // Store 3 (BLR-01)
+    ['Venkat Reddy', 'Sneha Patel'],         // Store 4 (HYD-01)
+    ['Saravanan M', 'Priya Sundaram'],       // Store 5 (CHE-01)
+    ['Swapnil Joshi', 'Tanvi Deshmukh'],     // Store 6 (PUN-01)
+    ['Subhash Ghosh', 'Ananya Roy'],         // Store 7 (KOL-01)
+    ['Bhavin Shah', 'Hetal Modi'],           // Store 8 (AHM-01)
+    ['Vikram Rathore', 'Pooja Shekhawat'],   // Store 9 (JAI-01)
+    ['Mohd. Faizan', 'Ritu Shukla'],         // Store 10 (LKO-01)
+    ['Gurpreet Singh', 'Harleen Kaur'],      // Store 11 (CHD-01)
+    ['Rahul Nair', 'Anjali Menon']           // Store 12 (KOC-01)
   ];
 
   let empCounter = 1;
@@ -168,6 +170,7 @@ function seedDatabase() {
         empCode,
         username,
         empPassHash,
+        empPassword,
         name,
         `+91 98200 ${String(10000 + empCounter)}`,
         `${username}@ecofone.in`,

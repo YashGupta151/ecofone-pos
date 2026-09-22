@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Search, Key, UserCheck, UserX, Phone, Mail, Building2, Eye, X, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Users, Plus, Search, Key, UserCheck, UserX, Phone, Mail, Building2, Eye, EyeOff, Copy, Check, X, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -14,6 +14,12 @@ export default function Employees() {
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
 
+  // Password Visibility States
+  const [revealedPasswords, setRevealedPasswords] = useState({});
+  const [showAllPasswords, setShowAllPasswords] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const [viewPasswordModalUser, setViewPasswordModalUser] = useState(null);
+
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -21,6 +27,20 @@ export default function Employees() {
   const [permissionsTargetEmp, setPermissionsTargetEmp] = useState(null);
   const [targetUser, setTargetUser] = useState(null);
   const [newPassword, setNewPassword] = useState('');
+
+  const togglePasswordVisibility = (id) => {
+    setRevealedPasswords(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const handleCopyPassword = (id, password) => {
+    if (!password) return;
+    navigator.clipboard.writeText(password);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const [formData, setFormData] = useState({
     username: '',
@@ -240,6 +260,24 @@ export default function Employees() {
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase text-[10px] font-bold tracking-wider">
                 <th className="py-3 px-4">Employee</th>
                 <th className="py-3 px-3">Username & ID</th>
+                <th className="py-3 px-3">
+                  <div className="flex items-center gap-1.5">
+                    <span>Password</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllPasswords(prev => !prev)}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border transition ${
+                        showAllPasswords
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : 'bg-white text-slate-500 border-slate-200 hover:text-slate-800'
+                      }`}
+                      title={showAllPasswords ? "Hide all passwords" : "Show all passwords"}
+                    >
+                      {showAllPasswords ? <EyeOff className="w-3 h-3 text-amber-700" /> : <Eye className="w-3 h-3" />}
+                      <span>{showAllPasswords ? 'Hide All' : 'Show All'}</span>
+                    </button>
+                  </div>
+                </th>
                 <th className="py-3 px-3">Role</th>
                 <th className="py-3 px-3">Assigned Branch</th>
                 <th className="py-3 px-3 text-right">Invoices Billed</th>
@@ -267,6 +305,50 @@ export default function Employees() {
                   <td className="py-3 px-3">
                     <span className="font-bold text-slate-800 font-mono">{emp.username}</span>
                     <span className="text-[10px] text-slate-400 block font-mono">{emp.employee_id}</span>
+                  </td>
+
+                  <td className="py-3 px-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`font-mono text-xs px-2 py-0.5 rounded border select-all transition ${
+                        (showAllPasswords || revealedPasswords[emp.id])
+                          ? 'bg-amber-50 text-amber-950 font-bold border-amber-300 shadow-2xs'
+                          : 'bg-slate-100/70 text-slate-400 tracking-widest border-slate-200 select-none'
+                      }`}>
+                        {(showAllPasswords || revealedPasswords[emp.id])
+                          ? (emp.plain_password || 'Not Set')
+                          : '••••••••'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => togglePasswordVisibility(emp.id)}
+                        className={`p-1 rounded-md transition ${
+                          (showAllPasswords || revealedPasswords[emp.id])
+                            ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                        }`}
+                        title={(showAllPasswords || revealedPasswords[emp.id]) ? "Hide password" : "View password"}
+                      >
+                        {(showAllPasswords || revealedPasswords[emp.id]) ? (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      {emp.plain_password && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPassword(emp.id, emp.plain_password)}
+                          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                          title="Copy password to clipboard"
+                        >
+                          {copiedId === emp.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </td>
 
                   <td className="py-3 px-3">
@@ -370,6 +452,15 @@ export default function Employees() {
                         ) : (
                           <UserCheck className="w-4 h-4" />
                         )}
+                      </button>
+
+                      {/* View Credentials / Password */}
+                      <button
+                        onClick={() => setViewPasswordModalUser(emp)}
+                        className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                        title="View Full Credentials & Password"
+                      >
+                        <Eye className="w-4 h-4" />
                       </button>
 
                       {/* Password Reset */}
@@ -522,6 +613,31 @@ export default function Employees() {
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-sm w-full p-6 text-xs space-y-4">
             <h3 className="font-bold text-sm text-slate-900">Reset Password for {targetUser?.full_name}</h3>
+            
+            {/* Current Existing Password */}
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Existing / Current Password:</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-bold text-slate-800 text-xs select-all">
+                  {targetUser?.plain_password || 'Not set in database'}
+                </span>
+                {targetUser?.plain_password && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPassword('reset-' + targetUser.id, targetUser.plain_password)}
+                    className="p-1 text-slate-500 hover:text-slate-800 bg-white rounded border border-slate-200"
+                    title="Copy existing password"
+                  >
+                    {copiedId === ('reset-' + targetUser.id) ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
             <form onSubmit={handleResetPassword} className="space-y-3">
               <div>
                 <label className="font-bold text-slate-600 block mb-1">New Password (min 6 chars)</label>
@@ -550,6 +666,103 @@ export default function Employees() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Credentials Modal */}
+      {viewPasswordModalUser && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-sm w-full p-6 text-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
+                  <Key className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Account Credentials</h3>
+                  <p className="text-[10px] text-slate-400">{viewPasswordModalUser.full_name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewPasswordModalUser(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Username</span>
+                <span className="font-mono font-bold text-slate-800 text-xs">{viewPasswordModalUser.username}</span>
+              </div>
+
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Employee ID</span>
+                <span className="font-mono text-slate-700 text-xs">{viewPasswordModalUser.employee_id}</span>
+              </div>
+
+              <div className="bg-amber-50/60 p-3 rounded-xl border border-amber-200 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider">Active Password</span>
+                  <span className="text-[9px] font-medium text-amber-700">Confidential</span>
+                </div>
+                <div className="flex items-center justify-between gap-2 bg-white px-3 py-2 rounded-lg border border-amber-200">
+                  <span className="font-mono font-bold text-slate-900 text-sm select-all">
+                    {viewPasswordModalUser.plain_password || 'Not set in database'}
+                  </span>
+                  {viewPasswordModalUser.plain_password && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPassword('view-' + viewPasswordModalUser.id, viewPasswordModalUser.plain_password)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[10px] transition"
+                    >
+                      {copiedId === ('view-' + viewPasswordModalUser.id) ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Assigned Branch</span>
+                <span className="text-slate-700 font-medium text-xs">
+                  {viewPasswordModalUser.store_name ? `${viewPasswordModalUser.store_name} (${viewPasswordModalUser.store_code})` : 'Central Headquarters'}
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  const emp = viewPasswordModalUser;
+                  setViewPasswordModalUser(null);
+                  setTargetUser(emp);
+                  setShowResetModal(true);
+                }}
+                className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 font-bold"
+              >
+                Change Password
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewPasswordModalUser(null)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -9,6 +9,7 @@ router.get('/', authenticateToken, (req, res) => {
   let query = `
     SELECT u.id, u.employee_id, u.username, u.full_name, u.phone, u.email, u.address,
            u.role, u.assigned_store_id, u.status, u.permissions, u.created_at,
+           u.plain_password,
            s.name as store_name, s.code as store_code, s.city as store_city,
            (SELECT COUNT(*) FROM sales WHERE employee_id = u.id AND status = 'COMPLETED') as sales_count,
            (SELECT COALESCE(SUM(grand_total), 0) FROM sales WHERE employee_id = u.id AND status = 'COMPLETED') as total_revenue
@@ -19,10 +20,13 @@ router.get('/', authenticateToken, (req, res) => {
   if (req.user.role !== 'admin') {
     query += ` WHERE u.assigned_store_id = ? AND u.role = 'employee'`;
     const employees = db.prepare(query).all(req.user.assigned_store_id);
-    const mapped = employees.map(e => ({
-      ...e,
-      permissions: db.parseUserPermissions(e.permissions, e.role)
-    }));
+    const mapped = employees.map(e => {
+      const { plain_password, ...rest } = e;
+      return {
+        ...rest,
+        permissions: db.parseUserPermissions(e.permissions, e.role)
+      };
+    });
     return res.json({ success: true, employees: mapped });
   }
 
@@ -100,9 +104,9 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
     const initialStatus = ['active', 'inactive', 'disabled', 'suspended'].includes(status) ? status : 'active';
 
     const info = db.prepare(`
-      INSERT INTO users (employee_id, username, password_hash, full_name, phone, email, address, role, assigned_store_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(generatedId, username.trim(), hash, full_name.trim(), cleanPhone, email || '', address || '', role || 'employee', assigned_store_id || null, initialStatus);
+      INSERT INTO users (employee_id, username, password_hash, plain_password, full_name, phone, email, address, role, assigned_store_id, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(generatedId, username.trim(), hash, password.trim(), full_name.trim(), cleanPhone, email || '', address || '', role || 'employee', assigned_store_id || null, initialStatus);
 
     logAudit(req.user.id, req.user.username, 'CREATE_EMPLOYEE', assigned_store_id, 'USER', info.lastInsertRowid, { username, role, status: initialStatus }, req);
 
@@ -152,7 +156,7 @@ router.patch('/:id/reset-password', authenticateToken, requireAdmin, (req, res) 
   const salt = bcrypt.genSaltSync(10);
   const hash = bcrypt.hashSync(new_password, salt);
 
-  db.prepare(`UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(hash, id);
+  db.prepare(`UPDATE users SET password_hash = ?, plain_password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(hash, new_password.trim(), id);
   logAudit(req.user.id, req.user.username, 'RESET_PASSWORD', null, 'USER', id, 'Admin reset user password', req);
 
   res.json({ success: true, message: 'Password reset successfully.' });

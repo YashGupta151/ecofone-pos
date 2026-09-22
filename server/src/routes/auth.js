@@ -80,7 +80,7 @@ router.post('/change-password', authenticateToken, (req, res) => {
   }
 
   const newHash = bcrypt.hashSync(new_password, 10);
-  db.prepare(`UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(newHash, req.user.id);
+  db.prepare(`UPDATE users SET password_hash = ?, plain_password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(newHash, new_password.trim(), req.user.id);
   logAudit(req.user.id, req.user.username, 'CHANGE_PASSWORD', req.user.assigned_store_id, 'USER', req.user.id, 'Password changed', req);
 
   res.json({ success: true, message: 'Password changed successfully.' });
